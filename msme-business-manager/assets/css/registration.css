@@ -1,0 +1,440 @@
+/* MSME Business Manager - Registration Page Styles */
+
+/* Base Layout */
+body.msme-registration { 
+    font-family: Arial, sans-serif; 
+    margin: 0; 
+    padding: 0; 
+    background: #f5f5f5; 
+}
+
+.msme-registration-container { 
+    max-width: 800px; 
+    margin: 50px auto; 
+    padding: 20px; 
+    background: white; 
+    border-radius: 8px; 
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1); 
+}
+
+.registration-info { 
+    background: #f0f8ff; 
+    padding: 20px; 
+    border-radius: 5px; 
+    border-left: 4px solid #0073aa; 
+    margin: 20px 0; 
+}
+
+.registration-placeholder { 
+    background: #fff3cd; 
+    padding: 15px; 
+    border-radius: 5px; 
+    border: 1px solid #ffeaa7; 
+    margin: 20px 0; 
+}
+
+h1 { 
+    color: #333; 
+    margin-bottom: 10px; 
+}
+
+/* Clean icon styles */
+.icon-target {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    background: #ff6b35;
+    border-radius: 50%;
+    text-align: center;
+    color: white;
+    font-weight: bold;
+    line-height: 18px;
+    font-size: 14px;
+}
+
+.icon-check {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    background: #46b450;
+    border-radius: 50%;
+    text-align: center;
+    color: white;
+    font-weight: bold;
+    line-height: 18px;
+    font-size: 12px;
+}
+
+/* Registration Form Styles */
+.registration-form-container {
+    margin-top: 30px;
+}
+
+.registration-steps {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 30px;
+    padding: 0 20px;
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    padding: 10px 20px;
+    margin: 0 10px;
+    background: #f5f5f5;
+    border-radius: 25px;
+    color: #666;
+    transition: all 0.3s ease;
+}
+
+.step.active {
+    background: #0073aa;
+    color: white;
+}
+
+.step.completed {
+    background: #46b450;
+    color: white;
+}
+
+.step-number {
+    background: white;
+    color: #0073aa;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 12px;
+    margin-right: 8px;
+}
+
+.step.active .step-number {
+    background: white;
+    color: #0073aa;
+}
+
+.step.completed .step-number {
+    background: white;
+    color: #46b450;
+}
+
+.form-step {
+    background: #f9f9f9;
+    padding: 30px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+}
+
+.form-step h3 {
+    margin-top: 0;
+    color: #333;
+    margin-bottom: 10px;
+}
+
+/* Google Login Button */
+.google-login-container {
+    text-align: center;
+    margin: 30px 0;
+}
+
+.google-login-btn {
+    display: inline-flex;
+    align-items: center;
+    background: #4285f4;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+    transition: background 0.3s ease;
+    border: 1px solid #4285f4;
+}
+
+.google-login-btn:hover {
+    background: #357ae8;
+    color: white;
+    text-decoration: none;
+}
+
+.google-login-btn img {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+    background: white;
+    padding: 2px;
+    border-radius: 2px;
+}
+
+.login-info {
+    background: white;
+    padding: 20px;
+    border-radius: 5px;
+    margin-top: 20px;
+}
+
+.login-info h4 {
+    margin-top: 0;
+    color: #333;
+}
+
+.login-info ul {
+    list-style: none;
+    padding: 0;
+}
+
+.login-info li {
+    padding: 5px 0;
+    color: #666;
+}
+
+/* Form Styles */
+.form-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #333;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #0073aa;
+    box-shadow: 0 0 0 2px rgba(0, 115, 170, 0.1);
+}
+
+.form-group small {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 12px;
+}
+
+/* Subdomain Input */
+.subdomain-input {
+    display: flex;
+    align-items: center;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.subdomain-input input {
+    border: none;
+    margin: 0;
+    flex: 1;
+    border-radius: 0;
+}
+
+.domain-suffix {
+    background: #f5f5f5;
+    padding: 12px;
+    color: #666;
+    border-left: 1px solid #ddd;
+    font-weight: bold;
+}
+
+.subdomain-check {
+    margin-top: 5px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.subdomain-check.available {
+    color: #46b450;
+}
+
+.subdomain-check.unavailable {
+    color: #dc3232;
+}
+
+.subdomain-check.checking {
+    color: #0073aa;
+}
+
+/* Checkbox */
+.checkbox-label {
+    display: flex;
+    align-items: flex-start;
+    cursor: pointer;
+    font-weight: normal !important;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+    margin-top: 2px;
+}
+
+/* Buttons */
+.btn-submit {
+    background: #0073aa;
+    color: white;
+    padding: 15px 30px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    width: 100%;
+    transition: background 0.3s ease;
+}
+
+.btn-submit:hover {
+    background: #005a87;
+}
+
+.btn-submit:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.btn-loading {
+    display: none;
+}
+
+/* OTP Resend */
+.resend-otp {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.resend-otp a {
+    color: #0073aa;
+    text-decoration: none;
+}
+
+.resend-otp a:hover {
+    text-decoration: underline;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .form-row {
+        flex-direction: column;
+        gap: 0;
+    }
+    
+    .registration-steps {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .step {
+        margin: 5px 0;
+        width: 100%;
+        max-width: 250px;
+        justify-content: center;
+    }
+    
+    .msme-registration-container {
+        margin: 20px;
+        padding: 15px;
+    }
+}
+
+/* Subdomain Suggestions */
+.subdomain-suggestions {
+    background: #f0f8ff;
+    padding: 15px;
+    border-radius: 5px;
+    border: 1px solid #0073aa;
+    margin-bottom: 15px;
+}
+
+.subdomain-suggestions p {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.subdomain-suggestions em {
+    color: #666;
+    font-size: 14px;
+}
+
+.suggestion-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.suggestion-btn {
+    background: #0073aa;
+    color: white;
+    border: none;
+    padding: 8px 15px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.suggestion-btn:hover {
+    background: #005a87;
+    transform: translateY(-1px);
+}
+
+.suggestion-btn.available {
+    background: #46b450;
+}
+
+.suggestion-btn.unavailable {
+    background: #dc3232;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.suggestion-btn.checking {
+    background: #ffb900;
+}
+
+.suggestion-btn.checking::after {
+    content: " ⟳";
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Mobile responsive for suggestions */
+@media (max-width: 768px) {
+    .suggestion-buttons {
+        flex-direction: column;
+    }
+    
+    .suggestion-btn {
+        width: 100%;
+        text-align: center;
+    }
+}

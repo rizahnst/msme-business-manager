@@ -1,0 +1,1562 @@
+<?php
+/**
+ * Plugin Name: MSME Business Manager
+ * Plugin URI: https://cobalah.id
+ * Description: Sistem manajemen bisnis untuk UMKM Indonesia dengan multisite WordPress. Menyediakan landing page gratis untuk bisnis lokal dengan fitur review, galeri, integrasi marketplace, dan sistem iklan.
+ * Version: 1.0.0
+ * Author: MSME Development Team
+ * Author URI: https://cobalah.id
+ * License: GPL v2 or later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain: msme-business-manager
+ * Domain Path: /languages
+ * Network: true
+ * Requires at least: 6.4
+ * Tested up to: 6.4
+ * Requires PHP: 8.2
+ *
+ * @package MSME_Business_Manager
+ * @version 1.0.0
+ * @author MSME Development Team
+ * @copyright 2025 MSME Business Manager
+ */
+
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit('Direct access denied.');
+}
+
+// Define plugin constants
+define('MSME_PLUGIN_VERSION', '1.0.0');
+define('MSME_PLUGIN_FILE', __FILE__);
+define('MSME_PLUGIN_DIR', plugin_dir_path(__FILE__));
+define('MSME_PLUGIN_URL', plugin_dir_url(__FILE__));
+define('MSME_PLUGIN_BASENAME', plugin_basename(__FILE__));
+
+/**
+ * Main MSME Business Manager Class
+ */
+class MSME_Business_Manager {
+    
+    /**
+     * Plugin instance
+     * @var MSME_Business_Manager
+     */
+    private static $instance = null;
+    
+    /**
+     * Get plugin instance
+     */
+    public static function get_instance() {
+        if (null === self::$instance) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+    
+    /**
+     * Constructor
+     */
+    private function __construct() {
+        $this->init_hooks();
+    }
+    
+    /**
+     * Initialize hooks
+     */
+    private function init_hooks() {
+        // Activation and deactivation hooks
+        register_activation_hook(__FILE__, array($this, 'activate_plugin'));
+        register_deactivation_hook(__FILE__, array($this, 'deactivate_plugin'));
+        
+        // Plugin initialization
+        add_action('plugins_loaded', array($this, 'init_plugin'));
+        $this->init_registration_system();
+        
+        $this->init_login_redirect();
+        $this->configure_gmail_smtp();
+        
+        // Admin hooks
+        add_action('network_admin_menu', array($this, 'add_network_admin_menu'));
+        add_action('admin_menu', array($this, 'add_site_admin_menu'));
+        
+        // AJAX hooks (for future use)
+        add_action('wp_ajax_msme_test_connection', array($this, 'test_database_connection'));
+        
+        // AJAX hooks
+        add_action('wp_ajax_msme_test_connection', array($this, 'test_database_connection'));
+        add_action('wp_ajax_check_subdomain_availability', array($this, 'check_subdomain_availability'));
+        add_action('wp_ajax_nopriv_check_subdomain_availability', array($this, 'check_subdomain_availability'));
+    }
+    
+    /**
+     * Plugin activation
+     */
+    public function activate_plugin() {
+        global $wpdb;
+        
+        // Start transaction for rollback capability
+        $wpdb->query('START TRANSACTION');
+        
+        try {
+            // Check WordPress and PHP version requirements
+            $this->check_requirements();
+            
+            // Create all database tables
+            $this->create_database_tables();
+            
+            // Insert initial data
+            $this->insert_initial_data();
+            
+            // Set plugin version and activation date
+            $this->set_plugin_options();
+            
+            // Create upload directories
+            $this->create_upload_directories();
+            
+            // Commit transaction
+            $wpdb->query('COMMIT');
+            
+            // Log successful activation
+            error_log('MSME Business Manager: Plugin activated successfully');
+            
+            // Set activation notice
+            set_transient('msme_activation_notice', true, 30);
+            
+            update_option('msme_flush_rewrite_rules', true);
+            
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            $wpdb->query('ROLLBACK');
+            
+            // Log error
+            error_log('MSME Business Manager activation error: ' . $e->getMessage());
+            
+            // Display error message
+            wp_die(
+                'MSME Business Manager activation failed: ' . $e->getMessage(),
+                'Plugin Activation Error',
+                array('back_link' => true)
+            );
+        }
+    }
+    
+    /**
+     * Check system requirements
+     */
+    private function check_requirements() {
+        global $wp_version;
+        
+        // Check WordPress version
+        if (version_compare($wp_version, '6.4', '<')) {
+            throw new Exception('WordPress 6.4 or higher is required.');
+        }
+        
+        // Check PHP version
+        if (version_compare(PHP_VERSION, '8.2', '<')) {
+            throw new Exception('PHP 8.2 or higher is required.');
+        }
+        
+        // Check if multisite is enabled
+        if (!is_multisite()) {
+            throw new Exception('WordPress Multisite is required.');
+        }
+        
+        // Check required PHP extensions
+        $required_extensions = array('mysqli', 'gd', 'curl', 'json');
+        foreach ($required_extensions as $extension) {
+            if (!extension_loaded($extension)) {
+                throw new Exception("PHP extension '{$extension}' is required.");
+            }
+        }
+    }
+    
+    /**
+     * Create all database tables
+     */
+    private function create_database_tables() {
+        global $wpdb;
+        
+        // Get table prefix for multisite
+        $table_prefix = $wpdb->base_prefix;
+        
+        // Define charset and collate
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        // Array of table creation SQL
+        $tables = array(
+            
+            // 1. Business Registrations Table
+            "CREATE TABLE {$table_prefix}msme_registrations (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                email varchar(100) NOT NULL,
+                google_id varchar(100) NOT NULL,
+                business_name varchar(200) NOT NULL,
+                subdomain varchar(100) NOT NULL,
+                business_category varchar(50) NOT NULL,
+                business_address text,
+                phone_number varchar(20),
+                status enum('pending','approved','rejected') DEFAULT 'pending',
+                otp_code varchar(6),
+                otp_expires datetime,
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                approved_date datetime,
+                admin_notes text,
+                PRIMARY KEY (id),
+                UNIQUE KEY subdomain (subdomain),
+                UNIQUE KEY email (email),
+                KEY status (status),
+                KEY created_date (created_date),
+                KEY business_category (business_category)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 2. Business Profiles Table
+            "CREATE TABLE {$table_prefix}msme_business_profiles (
+                site_id bigint(20) UNSIGNED NOT NULL,
+                owner_name varchar(200),
+                business_name varchar(200) NOT NULL,
+                business_description text,
+                business_category varchar(50) NOT NULL,
+                phone_number varchar(20),
+                whatsapp_number varchar(20),
+                telegram_username varchar(100),
+                email varchar(100),
+                address text,
+                operating_hours json,
+                google_maps_url text,
+                logo_url varchar(500),
+                account_status enum('free','paid') DEFAULT 'free',
+                business_status enum('active','temporarily_closed','permanently_closed','moved','inactive') DEFAULT 'active',
+                notification_pref enum('email','telegram','both','none') DEFAULT 'email',
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                updated_date datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (site_id),
+                KEY business_category (business_category),
+                KEY business_status (business_status),
+                KEY account_status (account_status),
+                KEY updated_date (updated_date)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 3. Social Media Links Table
+            "CREATE TABLE {$table_prefix}msme_social_media (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                platform enum('instagram','tiktok','facebook','twitter','youtube','linkedin') NOT NULL,
+                username varchar(100),
+                url varchar(500),
+                display_order int(3) DEFAULT 0,
+                is_active tinyint(1) DEFAULT 1,
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY site_id (site_id),
+                KEY platform (platform),
+                KEY is_active (is_active),
+                KEY display_order (display_order)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 4. Marketplace Links Table
+            "CREATE TABLE {$table_prefix}msme_marketplace_links (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                platform enum('tokopedia','shopee','gofood','grabfood','shopeefood','custom') NOT NULL,
+                store_url varchar(500) NOT NULL,
+                store_name varchar(200),
+                is_active tinyint(1) DEFAULT 1,
+                display_order int(3) DEFAULT 0,
+                click_count int(11) DEFAULT 0,
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY site_id (site_id),
+                KEY platform (platform),
+                KEY is_active (is_active),
+                KEY display_order (display_order)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 5. Image Gallery Table
+            "CREATE TABLE {$table_prefix}msme_images (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                filename varchar(255) NOT NULL,
+                original_filename varchar(255),
+                file_path varchar(500) NOT NULL,
+                file_size int(11),
+                caption text,
+                display_order int(3) DEFAULT 0,
+                upload_date datetime DEFAULT CURRENT_TIMESTAMP,
+                is_logo tinyint(1) DEFAULT 0,
+                PRIMARY KEY (id),
+                KEY site_id (site_id),
+                KEY display_order (display_order),
+                KEY is_logo (is_logo),
+                KEY upload_date (upload_date)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 6. Reviews Table (Enhanced)
+            "CREATE TABLE {$table_prefix}msme_reviews (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                reviewer_email varchar(100) NOT NULL,
+                reviewer_name varchar(200) NOT NULL,
+                reviewer_google_id varchar(100),
+                rating tinyint(1) NOT NULL CHECK (rating >= 1 AND rating <= 5),
+                review_text text,
+                has_images tinyint(1) DEFAULT 0,
+                image_count tinyint(1) DEFAULT 0 CHECK (image_count <= 3),
+                status enum('pending','approved','rejected') DEFAULT 'pending',
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                moderated_date datetime,
+                moderated_by bigint(20) UNSIGNED,
+                moderator_notes text,
+                helpful_count int(11) DEFAULT 0,
+                PRIMARY KEY (id),
+                KEY site_id (site_id),
+                KEY status (status),
+                KEY rating (rating),
+                KEY created_date (created_date),
+                KEY has_images (has_images),
+                UNIQUE KEY unique_reviewer_per_site (site_id, reviewer_google_id)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 7. Review Images Table
+            "CREATE TABLE {$table_prefix}msme_review_images (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                review_id bigint(20) UNSIGNED NOT NULL,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                filename varchar(255) NOT NULL,
+                original_filename varchar(255),
+                file_path varchar(500) NOT NULL,
+                file_size int(11),
+                image_order tinyint(1) DEFAULT 1,
+                upload_date datetime DEFAULT CURRENT_TIMESTAMP,
+                is_approved tinyint(1) DEFAULT 0,
+                PRIMARY KEY (id),
+                KEY review_id (review_id),
+                KEY site_id (site_id),
+                KEY is_approved (is_approved),
+                KEY image_order (image_order)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 8. Business Categories Table
+            "CREATE TABLE {$table_prefix}msme_categories (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                category_name varchar(100) NOT NULL,
+                category_slug varchar(100) NOT NULL,
+                parent_id bigint(20) UNSIGNED DEFAULT NULL,
+                description text,
+                icon varchar(100),
+                display_order int(3) DEFAULT 0,
+                is_active tinyint(1) DEFAULT 1,
+                site_count int(11) DEFAULT 0,
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                UNIQUE KEY category_slug (category_slug),
+                KEY parent_id (parent_id),
+                KEY is_active (is_active),
+                KEY display_order (display_order)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 9. Content Reports Table
+            "CREATE TABLE {$table_prefix}msme_reports (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                reporter_email varchar(100),
+                report_type enum('closed_business','incorrect_info','inappropriate_content','fake_business','wrong_location','other') NOT NULL,
+                description text,
+                status enum('pending','investigating','resolved','dismissed') DEFAULT 'pending',
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                resolved_date datetime,
+                resolved_by bigint(20) UNSIGNED,
+                admin_notes text,
+                reporter_ip varchar(45),
+                PRIMARY KEY (id),
+                KEY site_id (site_id),
+                KEY report_type (report_type),
+                KEY status (status),
+                KEY created_date (created_date),
+                KEY reporter_ip (reporter_ip)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 10. Analytics Table
+            "CREATE TABLE {$table_prefix}msme_analytics (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                site_id bigint(20) UNSIGNED NOT NULL,
+                date date NOT NULL,
+                page_views int(11) DEFAULT 0,
+                unique_visitors int(11) DEFAULT 0,
+                bounce_rate decimal(5,2),
+                avg_session_duration int(11),
+                review_submissions int(11) DEFAULT 0,
+                review_images_uploaded int(11) DEFAULT 0,
+                review_images_approved int(11) DEFAULT 0,
+                review_images_rejected int(11) DEFAULT 0,
+                contact_clicks int(11) DEFAULT 0,
+                marketplace_clicks int(11) DEFAULT 0,
+                social_clicks int(11) DEFAULT 0,
+                whatsapp_clicks int(11) DEFAULT 0,
+                telegram_clicks int(11) DEFAULT 0,
+                share_clicks int(11) DEFAULT 0,
+                PRIMARY KEY (id),
+                UNIQUE KEY unique_site_date (site_id, date),
+                KEY date (date),
+                KEY site_id (site_id)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 11. Ads Management Table
+            "CREATE TABLE {$table_prefix}msme_ads (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                ad_name varchar(200) NOT NULL,
+                ad_content text NOT NULL,
+                ad_type enum('banner','text','image') DEFAULT 'banner',
+                target_categories json,
+                target_locations json,
+                start_date datetime,
+                end_date datetime,
+                is_active tinyint(1) DEFAULT 1,
+                impressions int(11) DEFAULT 0,
+                clicks int(11) DEFAULT 0,
+                click_rate decimal(5,4) DEFAULT 0.0000,
+                daily_budget decimal(10,2),
+                total_spent decimal(10,2) DEFAULT 0.00,
+                created_date datetime DEFAULT CURRENT_TIMESTAMP,
+                updated_date datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY is_active (is_active),
+                KEY start_date (start_date),
+                KEY end_date (end_date),
+                KEY ad_type (ad_type)
+            ) ENGINE=InnoDB {$charset_collate};",
+            
+            // 12. Notifications Table
+            "CREATE TABLE {$table_prefix}msme_notifications (
+                id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+                recipient_email varchar(100) NOT NULL,
+                recipient_telegram varchar(100),
+                notification_type enum('registration','approval','review','status_change','system','marketing') NOT NULL,
+                subject varchar(200),
+                message text NOT NULL,
+                status enum('pending','sent','failed','cancelled') DEFAULT 'pending',
+                send_via enum('email','telegram','both') DEFAULT 'email',
+                scheduled_date datetime DEFAULT CURRENT_TIMESTAMP,
+                sent_date datetime,
+                attempts int(3) DEFAULT 0,
+                error_message text,
+                site_id bigint(20) UNSIGNED,
+                PRIMARY KEY (id),
+                KEY status (status),
+                KEY notification_type (notification_type),
+                KEY scheduled_date (scheduled_date),
+                KEY recipient_email (recipient_email),
+                KEY site_id (site_id)
+            ) ENGINE=InnoDB {$charset_collate};"
+        );
+        
+        // Create tables using WordPress dbDelta function
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        
+        foreach ($tables as $table_sql) {
+            $result = dbDelta($table_sql);
+            if ($wpdb->last_error) {
+                throw new Exception("Database table creation failed: " . $wpdb->last_error);
+            }
+        }
+        
+        // Add foreign key constraints separately (after all tables are created)
+        $this->add_foreign_keys();
+        
+        // Add performance indexes
+        $this->add_performance_indexes();
+    }
+    
+    /**
+     * Add foreign key constraints
+     */
+    private function add_foreign_keys() {
+        global $wpdb;
+        
+        $table_prefix = $wpdb->base_prefix;
+        
+        // Check if foreign key constraints already exist
+        $existing_constraints = $wpdb->get_results("
+            SELECT CONSTRAINT_NAME 
+            FROM information_schema.TABLE_CONSTRAINTS 
+            WHERE TABLE_SCHEMA = DATABASE() 
+            AND CONSTRAINT_TYPE = 'FOREIGN KEY'
+            AND TABLE_NAME IN ('{$table_prefix}msme_review_images', '{$table_prefix}msme_categories')
+        ");
+    
+        $constraint_names = wp_list_pluck($existing_constraints, 'CONSTRAINT_NAME');
+        
+        // Only add foreign keys if they don't exist
+        if (!in_array('fk_review_images_review', $constraint_names)) {
+            $wpdb->query("ALTER TABLE {$table_prefix}msme_review_images 
+                         ADD CONSTRAINT fk_review_images_review 
+                         FOREIGN KEY (review_id) REFERENCES {$table_prefix}msme_reviews(id) ON DELETE CASCADE");
+        }
+        
+        if (!in_array('fk_categories_parent', $constraint_names)) {
+            $wpdb->query("ALTER TABLE {$table_prefix}msme_categories 
+                         ADD CONSTRAINT fk_categories_parent 
+                         FOREIGN KEY (parent_id) REFERENCES {$table_prefix}msme_categories(id) ON DELETE SET NULL");
+        }
+    }
+    
+    /**
+     * Add performance indexes
+     */
+    private function add_performance_indexes() {
+    global $wpdb;
+    
+        $table_prefix = $wpdb->base_prefix;
+        
+        // Define indexes to check/create
+        $indexes_to_create = array(
+            array('table' => 'msme_business_profiles', 'name' => 'idx_category_status', 'sql' => 'business_category, business_status'),
+            array('table' => 'msme_reviews', 'name' => 'idx_site_status_rating', 'sql' => 'site_id, status, rating'),
+            array('table' => 'msme_analytics', 'name' => 'idx_site_date_range', 'sql' => 'site_id, date'),
+            array('table' => 'msme_marketplace_links', 'name' => 'idx_site_active_platform', 'sql' => 'site_id, is_active, platform'),
+            array('table' => 'msme_social_media', 'name' => 'idx_site_active_order', 'sql' => 'site_id, is_active, display_order')
+        );
+    
+        // Check and create regular indexes
+        foreach ($indexes_to_create as $index) {
+            $table_name = $table_prefix . $index['table'];
+            $index_name = $index['name'];
+            
+            // Check if index exists
+            $existing_index = $wpdb->get_var("
+                SELECT COUNT(*) 
+                FROM information_schema.statistics 
+                WHERE table_schema = DATABASE() 
+                AND table_name = '$table_name' 
+                AND index_name = '$index_name'
+            ");
+            
+            if (!$existing_index) {
+                $wpdb->query("ALTER TABLE $table_name ADD INDEX $index_name ({$index['sql']})");
+            }
+        }
+    
+        // Check and create FULLTEXT indexes
+        $fulltext_indexes = array(
+            array('table' => 'msme_business_profiles', 'columns' => 'business_name, business_description'),
+            array('table' => 'msme_reviews', 'columns' => 'review_text')
+        );
+        
+        foreach ($fulltext_indexes as $ft_index) {
+            $table_name = $table_prefix . $ft_index['table'];
+            
+            // Check if FULLTEXT index exists
+            $existing_ft = $wpdb->get_var("
+                SELECT COUNT(*) 
+                FROM information_schema.statistics 
+                WHERE table_schema = DATABASE() 
+                AND table_name = '$table_name' 
+                AND index_type = 'FULLTEXT'
+            ");
+            
+            if (!$existing_ft) {
+                $wpdb->query("ALTER TABLE $table_name ADD FULLTEXT({$ft_index['columns']})");
+            }
+        }
+    }
+    
+    /**
+     * Insert initial data
+     */
+    private function insert_initial_data() {
+        global $wpdb;
+        
+        $table_prefix = $wpdb->base_prefix;
+        
+        // Check if categories already exist
+        $existing_categories = $wpdb->get_var("SELECT COUNT(*) FROM {$table_prefix}msme_categories");
+        
+        if ($existing_categories == 0) {
+            // Insert business categories
+            $categories = array(
+                array('Makanan & Minuman', 'makanan-minuman', 'Restoran, warung, katering, dan bisnis kuliner', 'fas fa-utensils', 1),
+                array('Retail & Toko', 'retail-toko', 'Toko, minimarket, fashion, dan retail', 'fas fa-store', 2),
+                array('Kesehatan', 'kesehatan', 'Klinik, apotek, puskesmas, dan layanan kesehatan', 'fas fa-heartbeat', 3),
+                array('Pendidikan', 'pendidikan', 'Sekolah, kursus, TK, dan layanan pendidikan', 'fas fa-graduation-cap', 4),
+                array('Jasa & Layanan', 'jasa-layanan', 'Salon, bengkel, laundry, dan jasa umum', 'fas fa-tools', 5),
+                array('Pemerintahan', 'pemerintahan', 'Kelurahan, kantor desa, dan instansi pemerintah', 'fas fa-landmark', 6),
+                array('Otomotif', 'otomotif', 'Bengkel, spare part, dan layanan otomotif', 'fas fa-car', 7),
+                array('Teknologi', 'teknologi', 'IT service, komputer, dan teknologi', 'fas fa-laptop', 8),
+                array('Kecantikan', 'kecantikan', 'Salon, spa, dan layanan kecantikan', 'fas fa-spa', 9),
+                array('Lainnya', 'lainnya', 'Bisnis dan layanan lainnya', 'fas fa-ellipsis-h', 10)
+            );
+            
+            foreach ($categories as $category) {
+                $wpdb->insert(
+                    $table_prefix . 'msme_categories',
+                    array(
+                        'category_name' => $category[0],
+                        'category_slug' => $category[1],
+                        'description' => $category[2],
+                        'icon' => $category[3],
+                        'display_order' => $category[4],
+                        'is_active' => 1,
+                        'created_date' => current_time('mysql')
+                    ),
+                    array('%s', '%s', '%s', '%s', '%d', '%d', '%s')
+                );
+            }
+        }
+        
+        // Check if default ad exists
+        $existing_ads = $wpdb->get_var("SELECT COUNT(*) FROM {$table_prefix}msme_ads");
+        
+        if ($existing_ads == 0) {
+            // Insert default advertisement
+            $wpdb->insert(
+                $table_prefix . 'msme_ads',
+                array(
+                    'ad_name' => 'Default Banner Ad',
+                    'ad_content' => '<div style="background: #f8f9fa; padding: 20px; text-align: center; border: 1px solid #dee2e6; border-radius: 5px; margin: 10px 0;"><h4 style="margin: 0 0 10px 0; color: #6c757d;">Ruang Iklan Tersedia</h4><p style="margin: 0; color: #6c757d; font-size: 14px;">Hubungi admin untuk memasang iklan Anda di sini</p></div>',
+                    'ad_type' => 'banner',
+                    'is_active' => 1,
+                    'created_date' => current_time('mysql')
+                ),
+                array('%s', '%s', '%s', '%d', '%s')
+            );
+        }
+    }
+    
+    /**
+     * Set plugin options and version
+     */
+    private function set_plugin_options() {
+        // Set plugin version
+        update_site_option('msme_plugin_version', MSME_PLUGIN_VERSION);
+        
+        // Set activation date
+        update_site_option('msme_activation_date', current_time('mysql'));
+        
+        // Set default plugin options
+        $default_options = array(
+            'image_max_size' => 2097152, // 2MB
+            'image_max_count' => 11,
+            'review_image_max_count' => 3,
+            'auto_approve_reviews' => false,
+            'enable_analytics' => true,
+            'enable_notifications' => true,
+            'default_business_status' => 'active',
+            'default_account_status' => 'free',
+            'otp_expiry_minutes' => 15,
+            'approval_notification_email' => get_site_option('admin_email'),
+            'telegram_bot_token' => '',
+            'google_maps_api_key' => '',
+            'smtp_settings' => array()
+        );
+        
+        update_site_option('msme_plugin_options', $default_options);
+        
+        $this->set_smtp_options();
+    }
+    
+    /**
+     * Create upload directories
+     */
+    private function create_upload_directories() {
+        $upload_dir = wp_upload_dir();
+        $base_dir = $upload_dir['basedir'];
+        
+        $directories = array(
+            $base_dir . '/msme-business',
+            $base_dir . '/msme-business/logos',
+            $base_dir . '/msme-business/galleries',
+            $base_dir . '/msme-reviews',
+            $base_dir . '/msme-reviews/' . date('Y'),
+            $base_dir . '/msme-reviews/' . date('Y') . '/' . date('m')
+        );
+        
+        foreach ($directories as $dir) {
+            if (!file_exists($dir)) {
+                wp_mkdir_p($dir);
+                
+                // Create .htaccess file to protect direct access
+                $htaccess_content = "# Protect uploaded files\n";
+                $htaccess_content .= "<Files ~ \"\\.(php|php3|php4|php5|phtml|pl|py|jsp|asp|sh|cgi)\$\">\n";
+                $htaccess_content .= "deny from all\n";
+                $htaccess_content .= "</Files>\n";
+                
+                file_put_contents($dir . '/.htaccess', $htaccess_content);
+                
+                // Create index.php to prevent directory listing
+                file_put_contents($dir . '/index.php', '<?php // Silence is golden');
+            }
+        }
+    }
+    
+    /**
+     * Plugin deactivation
+     */
+    public function deactivate_plugin() {
+        // Clear any scheduled events
+        wp_clear_scheduled_hook('msme_daily_analytics');
+        wp_clear_scheduled_hook('msme_cleanup_notifications');
+        
+        // Log deactivation
+        error_log('MSME Business Manager: Plugin deactivated');
+    }
+    
+    /**
+     * Initialize plugin
+     */
+    public function init_plugin() {
+        // Load text domain for internationalization
+        load_plugin_textdomain('msme-business-manager', false, dirname(MSME_PLUGIN_BASENAME) . '/languages');
+        
+        // Add admin notices
+        add_action('network_admin_notices', array($this, 'activation_notice'));
+    }
+    
+    /**
+     * Add Network Admin Menu
+     */
+    public function add_network_admin_menu() {
+        add_menu_page(
+            'MSME Business Manager',
+            'MSME Manager',
+            'manage_network',
+            'msme-business-manager',
+            array($this, 'network_admin_page'),
+            'dashicons-store',
+            30
+        );
+        
+        add_submenu_page(
+            'msme-business-manager',
+            'Dashboard',
+            'Dashboard',
+            'manage_network',
+            'msme-business-manager',
+            array($this, 'network_admin_page')
+        );
+        
+        add_submenu_page(
+            'msme-business-manager',
+            'Database Status',
+            'Database Status',
+            'manage_network',
+            'msme-database-status',
+            array($this, 'database_status_page')
+        );
+        
+        $this->add_smtp_config_page();
+    }
+    
+    /**
+     * Add Site Admin Menu
+     */
+    public function add_site_admin_menu() {
+        // Only add for business sites (not main site)
+        if (is_main_site()) {
+            return;
+        }
+        
+        add_menu_page(
+            'Business Manager',
+            'Business',
+            'manage_options',
+            'msme-business',
+            array($this, 'site_admin_page'),
+            'dashicons-store',
+            25
+        );
+    }
+    
+    /**
+     * Network Admin Page
+     */
+    public function network_admin_page() {
+        ?>
+        <div class="wrap">
+            <h1>MSME Business Manager - Network Dashboard</h1>
+            <div class="card">
+                <h2>Plugin Status</h2>
+                <p><strong>Version:</strong> <?php echo MSME_PLUGIN_VERSION; ?></p>
+                <p><strong>Activation Date:</strong> <?php echo get_site_option('msme_activation_date', 'Not set'); ?></p>
+                <p><strong>Database Tables:</strong> <?php echo $this->count_database_tables(); ?> / 12</p>
+                <p><strong>Business Categories:</strong> <?php echo $this->count_categories(); ?></p>
+            </div>
+            
+            <div class="card">
+                <h2>Quick Actions</h2>
+                <button type="button" class="button button-secondary" onclick="testDatabaseConnection()">Test Database Connection</button>
+                <div id="db-test-result"></div>
+            </div>
+        </div>
+        
+        <script>
+        function testDatabaseConnection() {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', ajaxurl, true);
+            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4 && xhr.status === 200) {
+                    document.getElementById('db-test-result').innerHTML = xhr.responseText;
+                }
+            };
+            xhr.send('action=msme_test_connection');
+        }
+        </script>
+        <?php
+    }
+    
+    /**
+     * Database Status Page
+     */
+    public function database_status_page() {
+        global $wpdb;
+        $table_prefix = $wpdb->base_prefix;
+        
+        // Get table status
+        $tables = array(
+            'msme_registrations', 'msme_business_profiles', 'msme_social_media',
+            'msme_marketplace_links', 'msme_images', 'msme_reviews',
+            'msme_review_images', 'msme_categories', 'msme_reports',
+            'msme_analytics', 'msme_ads', 'msme_notifications'
+        );
+        
+        ?>
+        <div class="wrap">
+            <h1>Database Status</h1>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th>Table Name</th>
+                        <th>Status</th>
+                        <th>Rows</th>
+                        <th>Engine</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($tables as $table): ?>
+                    <?php
+                    $full_table_name = $table_prefix . $table;
+                    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$full_table_name'");
+                    $row_count = $table_exists ? $wpdb->get_var("SELECT COUNT(*) FROM $full_table_name") : 0;
+                    $engine = $table_exists ? $wpdb->get_var("SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = '$full_table_name'") : '';
+                    ?>
+                    <tr>
+                        <td><?php echo $full_table_name; ?></td>
+                        <td><?php echo $table_exists ? '<span style="color: green;">✓ Exists</span>' : '<span style="color: red;">✗ Missing</span>'; ?></td>
+                        <td><?php echo $row_count; ?></td>
+                        <td><?php echo $engine; ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php
+    }
+    
+    /**
+     * Site Admin Page
+     */
+    public function site_admin_page() {
+        ?>
+        <div class="wrap">
+            <h1>Business Manager</h1>
+            <p>Welcome to your business management dashboard.</p>
+            <p><em>Business management features will be available in the next development phase.</em></p>
+        </div>
+        <?php
+    }
+    
+    /**
+     * Display activation notice
+     */
+    public function activation_notice() {
+        if (get_transient('msme_activation_notice')) {
+            ?>
+            <div class="notice notice-success is-dismissible">
+                <p><strong>MSME Business Manager:</strong> Plugin berhasil diaktivasi! Semua tabel database telah dibuat dan data awal telah dimasukkan.</p>
+            </div>
+            <?php
+            delete_transient('msme_activation_notice');
+        }
+    }
+    
+    /**
+     * Test database connection (AJAX)
+     */
+    public function test_database_connection() {
+        global $wpdb;
+        
+        try {
+            $result = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->base_prefix}msme_categories");
+            echo '<p style="color: green;">✓ Database connection successful. Found ' . $result . ' categories.</p>';
+        } catch (Exception $e) {
+            echo '<p style="color: red;">✗ Database connection failed: ' . $e->getMessage() . '</p>';
+        }
+        
+        wp_die();
+    }
+    
+    /**
+     * Handle registration page template
+     */
+    public function handle_registration_page() {
+        if (get_query_var('msme_registration')) {
+            // Only allow on main site
+            if (!is_main_site()) {
+                // Return 404 for subsites - registration only on main site
+                global $wp_query;
+                $wp_query->set_404();
+                status_header(404);
+                return;
+            }
+            
+            // Enqueue assets for registration page
+            $this->enqueue_registration_assets();
+            
+            $this->display_registration_page();
+            exit;
+        }
+    }
+    
+    /**
+     * Count database tables
+     */
+    private function count_database_tables() {
+        global $wpdb;
+        $table_prefix = $wpdb->base_prefix;
+        return $wpdb->get_var("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE '{$table_prefix}msme_%'");
+    }
+    
+    /**
+     * Registration endpoint and form handling
+     */
+    public function init_registration_system() {
+        // Add custom endpoint for business registration
+        add_action('init', array($this, 'add_registration_endpoint'));
+        add_action('template_redirect', array($this, 'handle_registration_page'));
+    }
+    
+    /**
+     * Add custom rewrite rule for registration
+     */
+    public function add_registration_endpoint() {
+        add_rewrite_rule('^daftar-bisnis/?$', 'index.php?msme_registration=1', 'top');
+        add_rewrite_tag('%msme_registration%', '([^&]+)');
+        
+        // Flush rewrite rules if needed (only on activation)
+        if (get_option('msme_flush_rewrite_rules')) {
+            flush_rewrite_rules();
+            delete_option('msme_flush_rewrite_rules');
+        }
+    }
+    
+    /**
+     * Enqueue registration page assets
+     */
+    private function enqueue_registration_assets() {
+        // Enqueue CSS
+        wp_enqueue_style(
+            'msme-registration',
+            MSME_PLUGIN_URL . 'assets/css/registration.css',
+            array(),
+            MSME_PLUGIN_VERSION
+        );
+        
+        // Enqueue JavaScript
+        wp_enqueue_script(
+            'msme-registration',
+            MSME_PLUGIN_URL . 'assets/js/registration.js',
+            array('jquery'),
+            MSME_PLUGIN_VERSION,
+            true
+        );
+        
+        // Localize script for AJAX
+        $localize_data = array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('msme_registration_nonce')
+        );
+        
+        // Add current user data if logged in
+        if (is_user_logged_in()) {
+            $current_user = wp_get_current_user();
+            $localize_data['current_user'] = array(
+                'display_name' => $current_user->display_name,
+                'email' => $current_user->user_email,
+                'id' => $current_user->ID
+            );
+        }
+        
+        wp_localize_script('msme-registration', 'msme_ajax', $localize_data);
+    }
+    
+    /**
+     * Display registration page
+     */
+    private function display_registration_page() {
+        // Check if user just completed Google auth
+        $google_auth_success = isset($_GET['google_auth']) && $_GET['google_auth'] === 'success';
+        $step = isset($_GET['step']) ? $_GET['step'] : '1';
+        
+        // Auto-advance to step 2 if Google auth successful
+        if ($google_auth_success && is_user_logged_in()) {
+            $step = '2';
+        }
+        
+        // Complete HTML template - no theme dependency
+        ?>
+        <!DOCTYPE html>
+        <html <?php language_attributes(); ?>>
+        <head>
+            <meta charset="<?php bloginfo('charset'); ?>">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Daftar Bisnis - <?php bloginfo('name'); ?></title>
+            <?php wp_head(); ?>
+        </head>
+        <body <?php body_class('msme-registration'); ?>>
+            
+        <div class="msme-registration-container">
+            <div class="container">
+                <h1>Daftar Bisnis Anda</h1>
+                <p>Buat landing page gratis untuk bisnis lokal Anda di Indonesia</p>
+                
+                <div class="registration-info">
+                    <h2><span class="icon-target">●</span> Test Phase: Registration Endpoint</h2>
+                    <p><strong>Status:</strong> <span class="icon-check">✓</span> Custom endpoint working</p>
+                    <p><strong>URL:</strong> <?php echo home_url('/daftar-bisnis'); ?></p>
+                    <p><strong>Site ID:</strong> <?php echo get_current_blog_id(); ?></p>
+                    <p><strong>Is Main Site:</strong> <?php echo is_main_site() ? 'Yes' : 'No'; ?></p>
+                </div>
+                
+                <!-- Registration Form -->
+                <div class="registration-form-container">
+                    <div class="registration-steps">
+                        <div class="step <?php echo ($step == '1') ? 'active' : ''; ?>" id="step-1">
+                            <span class="step-number">1</span>
+                            <span class="step-text">Login dengan Google</span>
+                        </div>
+                        <div class="step <?php echo ($step == '2') ? 'active' : ''; ?>" id="step-2">
+                            <span class="step-number">2</span>
+                            <span class="step-text">Informasi Bisnis</span>
+                        </div>
+                        <div class="step <?php echo ($step == '3') ? 'active' : ''; ?>" id="step-3">
+                            <span class="step-number">3</span>
+                            <span class="step-text">Verifikasi Email</span>
+                        </div>
+                    </div>
+    
+                    <!-- Step 1: Google Authentication -->
+                    <div class="form-step" id="form-step-1" <?php echo ($step != '1') ? 'style="display: none;"' : ''; ?>>
+                        <h3>Masuk dengan Akun Google Anda</h3>
+                        <p>Gunakan akun Google untuk mendaftar bisnis Anda secara aman dan mudah.</p>
+                        
+                        <div class="google-login-container">
+                            <?php
+                            // Check if user is already logged in
+                            if (is_user_logged_in()) {
+                                $current_user = wp_get_current_user();
+                                echo '<div class="user-logged-in">';
+                                echo '<p><strong>Selamat datang, ' . esc_html($current_user->display_name) . '!</strong></p>';
+                                echo '<p>Email: ' . esc_html($current_user->user_email) . '</p>';
+                                
+                                // Check if they just completed Google auth
+                                if ($google_auth_success) {
+                                    echo '<p style="color: green;">✓ Login Google berhasil! Silakan lengkapi informasi bisnis Anda.</p>';
+                                    echo '<script>
+                                        document.addEventListener("DOMContentLoaded", function() {
+                                            showStep(2);
+                                            // Pre-fill user data
+                                            document.getElementById("owner_name").value = "' . esc_js($current_user->display_name) . '";
+                                            document.getElementById("owner_email").value = "' . esc_js($current_user->user_email) . '";
+                                        });
+                                    </script>';
+                                } else {
+                                    echo '<button type="button" class="btn-continue" onclick="continueToBusinessForm()">Lanjutkan Pendaftaran Bisnis</button>';
+                                }
+                                
+                                echo '<p><a href="' . wp_logout_url(home_url('/daftar-bisnis')) . '">Gunakan akun Google lain</a></p>';
+                                echo '</div>';
+                            } else {
+                                // Show Google login button - use Nextend's redirect setting
+                                echo '<a href="' . wp_login_url() . '?loginSocial=google" class="google-login-btn">';
+                                echo '<img src="https://developers.google.com/identity/images/g-logo.png" alt="Google"> ';
+                                echo 'Masuk dengan Google</a>';
+                            }
+                            ?>
+                        </div>
+                        
+                        <div class="login-info">
+                            <h4>Mengapa menggunakan Google?</h4>
+                            <ul>
+                                <li>✓ Proses registrasi lebih cepat</li>
+                                <li>✓ Keamanan data terjamin</li>
+                                <li>✓ Tidak perlu mengingat password baru</li>
+                                <li>✓ Informasi profil otomatis terisi</li>
+                            </ul>
+                        </div>
+                    </div>
+    
+                    <!-- Step 2: Business Information -->
+                    <div class="form-step" id="form-step-2" <?php echo ($step != '2') ? 'style="display: none;"' : ''; ?>>
+                        <h3>Informasi Bisnis Anda</h3>
+                        <p>Lengkapi informasi bisnis untuk membuat landing page yang menarik.</p>
+                        
+                        <form id="business-registration-form" method="post">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="owner_name">Nama Pemilik Bisnis *</label>
+                                    <input type="text" id="owner_name" name="owner_name" required readonly 
+                                           placeholder="Nama akan otomatis terisi dari Google">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="owner_email">Email *</label>
+                                    <input type="email" id="owner_email" name="owner_email" required readonly
+                                           placeholder="Email akan otomatis terisi dari Google">
+                                </div>
+                            </div>
+    
+                            <div class="form-group">
+                                <label for="business_name">Nama Bisnis *</label>
+                                <input type="text" id="business_name" name="business_name" required 
+                                       placeholder="Contoh: Warung Makan Sederhana" maxlength="200">
+                                <small>Nama bisnis yang akan ditampilkan di landing page</small>
+                            </div>
+    
+                            <div class="form-group">
+                                <label for="business_category">Kategori Bisnis *</label>
+                                <select id="business_category" name="business_category" required>
+                                    <option value="">Pilih kategori bisnis Anda</option>
+                                    <?php
+                                    // Load categories from database
+                                    global $wpdb;
+                                    $categories = $wpdb->get_results("SELECT category_slug, category_name FROM {$wpdb->base_prefix}msme_categories WHERE is_active = 1 ORDER BY display_order");
+                                    foreach ($categories as $category) {
+                                        echo '<option value="' . esc_attr($category->category_slug) . '">' . esc_html($category->category_name) . '</option>';
+                                    }
+                                    ?>
+                                </select>
+                            </div>
+                            
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="phone_number">Nomor Telepon</label>
+                                    <input type="tel" id="phone_number" name="phone_number" 
+                                           placeholder="08123456789" pattern="[0-9]{10,15}">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="business_address">Alamat Bisnis</label>
+                                    <input type="text" id="business_address" name="business_address" 
+                                           placeholder="Jl. Menteng Dalam No. 123, Jakarta" maxlength="200">
+                                    <small>Alamat akan membantu membuat saran subdomain yang unik</small>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="subdomain">Alamat Website (Subdomain) *</label>
+                                <div class="subdomain-suggestions" id="subdomain-suggestions" style="display: none;">
+                                    <p><strong>Saran subdomain berdasarkan nama bisnis dan alamat:</strong></p>
+                                    <div class="suggestion-buttons" id="suggestion-buttons"></div>
+                                    <p><em>Atau masukkan subdomain pilihan Anda di bawah:</em></p>
+                                </div>
+                                <div class="subdomain-input">
+                                    <input type="text" id="subdomain" name="subdomain" required 
+                                           placeholder="namatoko" pattern="[a-z0-9-]+" maxlength="50">
+                                    <span class="domain-suffix">.cobalah.id</span>
+                                </div>
+                                <div id="subdomain-check" class="subdomain-check"></div>
+                                <small>Hanya huruf kecil, angka, dan tanda hubung (-). Minimal 3 karakter.</small>
+                            </div>
+    
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="terms_agree" name="terms_agree" required>
+                                    <span class="checkmark"></span>
+                                    Saya setuju dengan <a href="#" target="_blank">Syarat & Ketentuan</a> dan <a href="#" target="_blank">Kebijakan Privasi</a>
+                                </label>
+                            </div>
+    
+                            <button type="submit" class="btn-submit" id="submit-registration" disabled>
+                                <span class="btn-text">Daftar Sekarang</span>
+                                <span class="btn-loading" style="display: none;">Memproses...</span>
+                            </button>
+                        </form>
+                    </div>
+    
+                    <!-- Step 3: Email Verification -->
+                    <div class="form-step" id="form-step-3" <?php echo ($step != '3') ? 'style="display: none;"' : ''; ?>>
+                        <h3>Verifikasi Email</h3>
+                        <p>Kode verifikasi telah dikirim ke email Anda. Masukkan kode untuk melanjutkan.</p>
+                        
+                        <form id="email-verification-form">
+                            <div class="form-group">
+                                <label for="otp_code">Kode Verifikasi (6 digit) *</label>
+                                <input type="text" id="otp_code" name="otp_code" required 
+                                       placeholder="123456" maxlength="6" pattern="[0-9]{6}">
+                            </div>
+                            
+                            <button type="submit" class="btn-submit">Verifikasi Email</button>
+                            
+                            <div class="resend-otp">
+                                <p>Tidak menerima kode? <a href="#" id="resend-otp-link">Kirim ulang</a></p>
+                                <div id="resend-countdown" style="display: none;">
+                                    Kirim ulang dalam <span id="countdown">60</span> detik
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <?php wp_footer(); ?>
+        </body>
+        </html>
+        <?php
+    }
+    
+    /**
+     * Handle post-login redirect for business registration
+     */
+    public function handle_registration_login_redirect($redirect_to, $request, $user) {
+        // Only handle for non-admin users logging in via Google
+        if (is_wp_error($user)) {
+            return $redirect_to;
+        }
+        
+        // Check if this is a social login (Nextend adds user meta)
+        $is_social_login = get_user_meta($user->ID, 'nsl-google-id', true);
+        
+        // Check if user came from registration page
+        $referer = wp_get_referer();
+        if ($is_social_login || (isset($_REQUEST['loginSocial']) && $_REQUEST['loginSocial'] === 'google') || strpos($referer, 'daftar-bisnis') !== false) {
+            
+            // Check if user has completed business registration
+            global $wpdb;
+            $existing_registration = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$wpdb->base_prefix}msme_registrations WHERE email = %s OR google_id = %s",
+                $user->user_email,
+                get_user_meta($user->ID, 'nsl-google-id', true)
+            ));
+            
+            if (!$existing_registration) {
+                // First time - redirect to registration form step 2
+                return home_url('/daftar-bisnis?step=2&google_auth=success');
+            } else {
+                // Already registered - check status
+                if ($existing_registration->status === 'pending') {
+                    return home_url('/daftar-bisnis?step=pending');
+                } elseif ($existing_registration->status === 'approved') {
+                    // Find their business site
+                    $site_domain = $existing_registration->subdomain . '.cobalah.id';
+                    $site = get_site_by_path($site_domain, '/');
+                    if ($site) {
+                        return get_site_url($site->blog_id);
+                    }
+                }
+            }
+        }
+        
+        return $redirect_to;
+    }
+
+    /**
+     * Initialize login redirect handling
+     */
+    public function init_login_redirect() {
+        add_filter('login_redirect', array($this, 'handle_registration_login_redirect'), 10, 3);
+    }
+
+    /**
+     * Count categories
+     */
+    private function count_categories() {
+        global $wpdb;
+        $table_prefix = $wpdb->base_prefix;
+        return $wpdb->get_var("SELECT COUNT(*) FROM {$table_prefix}msme_categories");
+    }
+    
+    /**
+     * AJAX handler for checking subdomain availability
+     */
+    public function check_subdomain_availability() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_registration_nonce')) {
+            wp_send_json_error(array('message' => 'Invalid nonce'));
+            return;
+        }
+        
+        $subdomain = sanitize_text_field($_POST['subdomain']);
+        
+        // Validate subdomain format
+        if (!preg_match('/^[a-z0-9-]+$/', $subdomain) || strlen($subdomain) < 3) {
+            wp_send_json_error(array('message' => 'Invalid subdomain format'));
+            return;
+        }
+        
+        global $wpdb;
+        
+        // Check if subdomain exists in registrations table
+        $existing_registration = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->base_prefix}msme_registrations WHERE subdomain = %s",
+            $subdomain
+        ));
+        
+        if ($existing_registration) {
+            wp_send_json_success(array('available' => false, 'reason' => 'Already registered'));
+            return;
+        }
+        
+        // Check if subdomain exists in WordPress multisite
+        $existing_site = get_site_by_path($subdomain . '.cobalah.id', '/');
+        
+        if ($existing_site) {
+            wp_send_json_success(array('available' => false, 'reason' => 'Site already exists'));
+            return;
+        }
+        
+        // Check reserved subdomains
+        $reserved_subdomains = array('www', 'admin', 'api', 'mail', 'ftp', 'blog', 'shop', 'store', 'news', 'support', 'help');
+        if (in_array($subdomain, $reserved_subdomains)) {
+            wp_send_json_success(array('available' => false, 'reason' => 'Reserved subdomain'));
+            return;
+        }
+        
+        wp_send_json_success(array('available' => true));
+    }
+    
+    /**
+     * Configure Gmail SMTP for sending emails
+     */
+    public function configure_gmail_smtp() {
+        add_action('phpmailer_init', array($this, 'setup_phpmailer_smtp'));
+    }
+    
+    /**
+     * Setup PHPMailer with Gmail SMTP
+     */
+    public function setup_phpmailer_smtp($phpmailer) {
+        $phpmailer->isSMTP();
+        $phpmailer->Host = 'smtp.gmail.com';
+        $phpmailer->SMTPAuth = true;
+        $phpmailer->Port = 587;
+        $phpmailer->SMTPSecure = 'tls';
+        $phpmailer->SMTPDebug = 0; // Set to 2 for debugging if needed
+        
+        // Get SMTP credentials from plugin options
+        $plugin_options = get_site_option('msme_plugin_options', array());
+        $smtp_user = isset($plugin_options['smtp_user']) ? $plugin_options['smtp_user'] : '';
+        $smtp_pass = isset($plugin_options['smtp_pass']) ? $plugin_options['smtp_pass'] : '';
+        
+        if (!empty($smtp_user) && !empty($smtp_pass)) {
+            $phpmailer->Username = $smtp_user;
+            $phpmailer->Password = $smtp_pass;
+            $phpmailer->From = 'tidak-dibalas@cobalah.id';
+            $phpmailer->FromName = 'Cobalah.id - Website Gratis untuk UMKM Indonesia';
+            $phpmailer->addReplyTo('bantuan@cobalah.id', 'Tim Support Cobalah.id');
+        }
+    }
+    
+    /**
+     * Add SMTP settings to plugin options during activation
+     */
+    private function set_smtp_options() {
+        $plugin_options = get_site_option('msme_plugin_options', array());
+        
+        // Add SMTP settings if not exist
+        if (!isset($plugin_options['smtp_user'])) {
+            $plugin_options['smtp_user'] = ''; // Will be set via admin panel
+            $plugin_options['smtp_pass'] = ''; // Will be set via admin panel
+            $plugin_options['smtp_from_name'] = 'Cobalah.id - Website Gratis untuk UMKM Indonesia';
+            $plugin_options['smtp_from_email'] = 'tidak-dibalas@cobalah.id';
+            $plugin_options['smtp_support_email'] = 'bantuan@cobalah.id';
+            
+            update_site_option('msme_plugin_options', $plugin_options);
+        }
+    }
+    
+    /**
+     * Send OTP email to user with clear Indonesian instructions
+     */
+    private function send_otp_email($email, $name, $otp_code, $business_name) {
+        $subject = '[Cobalah.id] OTP Kode Verifikasi - Registrasi Bisnis Anda';
+        
+        $message = "
+        <html>
+        <body style='font-family: Arial, sans-serif; line-height: 1.8; color: #333; background: #f8f9fa;'>
+            <div style='max-width: 600px; margin: 0 auto; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);'>
+                
+                <!-- Header -->
+                <div style='background: linear-gradient(135deg, #0073aa, #005a87); padding: 30px 20px; text-align: center;'>
+                    <h1 style='color: white; margin: 0; font-size: 28px;'>Cobalah.id</h1>
+                    <p style='color: #e6f3ff; margin: 5px 0 0 0; font-size: 14px;'>Platform Landing Page Gratis untuk UMKM Indonesia</p>
+                </div>
+                
+                <!-- Content -->
+                <div style='padding: 30px 25px;'>
+                    <h2 style='color: #0073aa; margin: 0 0 20px 0; font-size: 24px;'>Selamat datang, {$name}!</h2>
+                    
+                    <p style='margin: 0 0 20px 0; font-size: 16px;'>
+                        Terima kasih telah mendaftarkan bisnis <strong style='color: #0073aa;'>\"{$business_name}\"</strong> 
+                        di platform Cobalah.id. Kami sangat senang dapat membantu bisnis Anda hadir secara online!
+                    </p>
+                    
+                    <!-- OTP Section -->
+                    <div style='background: #f0f8ff; border: 2px solid #0073aa; border-radius: 10px; padding: 25px; text-align: center; margin: 25px 0;'>
+                        <h3 style='margin: 0 0 15px 0; color: #0073aa; font-size: 18px;'>🔐 Kode Verifikasi Email Anda</h3>
+                        <div style='background: white; border-radius: 8px; padding: 20px; margin: 15px 0;'>
+                            <h1 style='font-size: 42px; letter-spacing: 8px; color: #0073aa; margin: 0; font-weight: bold; font-family: monospace;'>{$otp_code}</h1>
+                        </div>
+                        <p style='margin: 15px 0 0 0; color: #d63384; font-weight: bold; font-size: 14px;'>
+                            ⏰ Kode ini berlaku selama 15 menit saja
+                        </p>
+                    </div>
+                    
+                    <!-- Instructions -->
+                    <div style='background: #fff3cd; border-left: 4px solid #ffc107; padding: 20px; margin: 25px 0;'>
+                        <h4 style='margin: 0 0 15px 0; color: #856404; font-size: 16px;'>📋 Langkah Selanjutnya:</h4>
+                        <ol style='margin: 0; padding-left: 20px; color: #856404;'>
+                            <li style='margin-bottom: 8px;'><strong>Kembali ke halaman registrasi</strong> di browser Anda</li>
+                            <li style='margin-bottom: 8px;'><strong>Masukkan kode 6 digit</strong> di atas pada kolom \"Kode Verifikasi\"</li>
+                            <li style='margin-bottom: 8px;'><strong>Klik tombol \"Verifikasi Email\"</strong></li>
+                            <li style='margin-bottom: 0;'><strong>Tunggu persetujuan admin</strong> (biasanya dalam 24 jam)</li>
+                        </ol>
+                    </div>
+                    
+                    <!-- What happens next -->
+                    <div style='background: #d1ecf1; border-left: 4px solid #17a2b8; padding: 20px; margin: 25px 0;'>
+                        <h4 style='margin: 0 0 10px 0; color: #0c5460; font-size: 16px;'>🎯 Setelah Verifikasi Berhasil:</h4>
+                        <ul style='margin: 0; padding-left: 20px; color: #0c5460;'>
+                            <li style='margin-bottom: 5px;'>Pendaftaran Anda akan masuk ke antrean persetujuan admin</li>
+                            <li style='margin-bottom: 5px;'>Kami akan kirim email pemberitahuan status persetujuan</li>
+                            <li style='margin-bottom: 0;'>Setelah disetujui, landing page bisnis Anda akan langsung aktif!</li>
+                        </ul>
+                    </div>
+                    
+                    <!-- No Reply Warning -->
+                    <div style='background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; padding: 15px; margin: 25px 0;'>
+                        <p style='margin: 0; font-size: 14px; color: #721c24; text-align: center;'>
+                            <strong>⚠️ PENTING:</strong> Email ini tidak dapat dibalas (no-reply)<br>
+                            <strong>Jangan balas email ini</strong>
+                        </p>
+                    </div>
+                    
+                    <!-- Support -->
+                    <div style='background: #d4edda; border-left: 4px solid #28a745; padding: 20px; margin: 25px 0;'>
+                        <h4 style='margin: 0 0 10px 0; color: #155724; font-size: 16px;'>🆘 Butuh Bantuan?</h4>
+                        <p style='margin: 0 0 10px 0; color: #155724;'>
+                            <strong>Email Support:</strong> <a href='mailto:bantuan@cobalah.id' style='color: #155724; font-weight: bold;'>bantuan@cobalah.id</a>
+                        </p>
+                        <p style='margin: 0 0 10px 0; color: #155724;'>
+                            <strong>Tim kami siap membantu Anda</strong> dengan segala pertanyaan seputar registrasi dan penggunaan platform.
+                        </p>
+                        <p style='margin: 0; font-size: 13px; color: #155724; font-style: italic;'>
+                            * Nomor WhatsApp support akan segera tersedia
+                        </p>
+                    </div>
+                    
+                    <!-- Additional Info -->
+                    <div style='border-top: 2px dashed #dee2e6; padding-top: 20px; margin-top: 30px;'>
+                        <p style='margin: 0 0 10px 0; font-size: 14px; color: #666;'>
+                            <strong>Tidak merasa mendaftar?</strong> Abaikan email ini dengan aman. 
+                            Kode verifikasi akan otomatis kedaluwarsa dalam 15 menit.
+                        </p>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div style='background: #f8f9fa; padding: 20px; text-align: center; border-top: 1px solid #dee2e6;'>
+                    <p style='margin: 0 0 5px 0; font-size: 12px; color: #6c757d;'>
+                        <strong>Email otomatis dari Cobalah.id</strong><br>
+                        Website Gratis untuk UMKM Indonesia
+                    </p>
+                    <p style='margin: 0; font-size: 11px; color: #6c757d;'>
+                        Dikirim dari: tidak-dibalas@cobalah.id | Support: bantuan@cobalah.id
+                    </p>
+                </div>
+                
+            </div>
+        </body>
+        </html>
+        ";
+        
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: Cobalah.id - Website Gratis untuk UMKM Indonesia <tidak-dibalas@cobalah.id>',
+            'Reply-To: bantuan@cobalah.id',
+            'X-Mailer: Cobalah.id Registration System'
+        );
+        
+        return wp_mail($email, $subject, $message, $headers);
+    }
+    
+    /**
+     * Add SMTP configuration to network admin
+     */
+    public function add_smtp_config_page() {
+        add_submenu_page(
+            'msme-business-manager',
+            'SMTP Configuration',
+            'SMTP Settings',
+            'manage_network',
+            'msme-smtp-config',
+            array($this, 'smtp_config_page')
+        );
+    }
+    
+    /**
+     * Display SMTP configuration page
+     */
+    public function smtp_config_page() {
+        if (isset($_POST['save_smtp'])) {
+            $plugin_options = get_site_option('msme_plugin_options', array());
+            $plugin_options['smtp_user'] = sanitize_email($_POST['smtp_user']);
+            $plugin_options['smtp_pass'] = sanitize_text_field($_POST['smtp_pass']);
+            update_site_option('msme_plugin_options', $plugin_options);
+            
+            echo '<div class="notice notice-success"><p>SMTP settings saved successfully!</p></div>';
+        }
+        
+        $plugin_options = get_site_option('msme_plugin_options', array());
+        $smtp_user = isset($plugin_options['smtp_user']) ? $plugin_options['smtp_user'] : '';
+        
+        ?>
+        <div class="wrap">
+            <h1>SMTP Configuration</h1>
+            <form method="post">
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Gmail Address</th>
+                        <td>
+                            <input type="email" name="smtp_user" value="<?php echo esc_attr($smtp_user); ?>" class="regular-text" />
+                            <p class="description">Gmail address for sending emails</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Gmail App Password</th>
+                        <td>
+                            <input type="password" name="smtp_pass" value="" class="regular-text" />
+                            <p class="description">16-character app password from Gmail (not your regular password)</p>
+                        </td>
+                    </tr>
+                </table>
+                <?php submit_button('Save SMTP Settings', 'primary', 'save_smtp'); ?>
+            </form>
+            
+            <h2>Setup Instructions</h2>
+            <ol>
+                <li>Go to Google Account Settings → Security</li>
+                <li>Enable 2-Step Verification</li>
+                <li>Go to App passwords</li>
+                <li>Generate password for "Mail"</li>
+                <li>Copy the 16-character password and paste above</li>
+            </ol>
+        </div>
+        <?php
+    }
+    
+}
+// Initialize the plugin
+MSME_Business_Manager::get_instance();
+
+?>
