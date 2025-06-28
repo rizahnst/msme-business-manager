@@ -314,3 +314,56 @@ function continueToBusinessForm() {
     
     showStep(2);
 }
+
+// Enhanced SMTP Test with verbose logging
+function testSMTPEmail() {
+    console.log('Step 1: SMTP Test button clicked');
+    
+    const resultDiv = document.getElementById('smtp-test-result');
+    resultDiv.innerHTML = '<div style="background: #f0f0f0; padding: 10px; border-radius: 5px;"><strong>Testing SMTP Configuration...</strong><br><div id="smtp-log"></div></div>';
+    
+    const logDiv = document.getElementById('smtp-log');
+    
+    function addLog(message) {
+        console.log('SMTP Test: ' + message);
+        logDiv.innerHTML += '<div style="margin: 5px 0; font-size: 12px;">' + message + '</div>';
+    }
+    
+    addLog('Step 2: Preparing AJAX request...');
+    
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', ajaxurl, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onreadystatechange = function() {
+        addLog('Step 3: XMLHttpRequest state: ' + xhr.readyState);
+        
+        if (xhr.readyState === 4) {
+            addLog('Step 4: Request completed with status: ' + xhr.status);
+            
+            if (xhr.status === 200) {
+                addLog('Step 5: Server response received');
+                console.log('Server response:', xhr.responseText);
+                
+                if (xhr.responseText.trim()) {
+                    resultDiv.innerHTML = xhr.responseText;
+                } else {
+                    resultDiv.innerHTML = '<div style="color: red;">❌ Empty response from server</div>';
+                }
+            } else {
+                addLog('❌ HTTP Error: ' + xhr.status);
+                resultDiv.innerHTML = '<div style="color: red;">❌ HTTP Error: ' + xhr.status + '</div>';
+            }
+        }
+    };
+    
+    xhr.onerror = function() {
+        addLog('❌ Network error occurred');
+        resultDiv.innerHTML = '<div style="color: red;">❌ Network error occurred</div>';
+    };
+    
+    addLog('Step 6: Sending AJAX request...');
+    xhr.send('action=test_smtp_email');
+    addLog('Step 7: AJAX request sent successfully');
+}
+
