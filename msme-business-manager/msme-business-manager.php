@@ -71,6 +71,7 @@ class MSME_Business_Manager {
         
         // Plugin initialization
         add_action('plugins_loaded', array($this, 'init_plugin'));
+        add_action('wp_ajax_test_smtp_email', array($this, 'test_smtp_email'));
         $this->init_registration_system();
         
         $this->init_login_redirect();
@@ -79,6 +80,7 @@ class MSME_Business_Manager {
         // Admin hooks
         add_action('network_admin_menu', array($this, 'add_network_admin_menu'));
         add_action('admin_menu', array($this, 'add_site_admin_menu'));
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_assets'));
         
         // AJAX hooks (for future use)
         add_action('wp_ajax_msme_test_connection', array($this, 'test_database_connection'));
@@ -87,6 +89,8 @@ class MSME_Business_Manager {
         add_action('wp_ajax_msme_test_connection', array($this, 'test_database_connection'));
         add_action('wp_ajax_check_subdomain_availability', array($this, 'check_subdomain_availability'));
         add_action('wp_ajax_nopriv_check_subdomain_availability', array($this, 'check_subdomain_availability'));
+        add_action('wp_ajax_submit_business_registration', array($this, 'submit_business_registration'));
+        add_action('wp_ajax_nopriv_submit_business_registration', array($this, 'submit_business_registration'));
     }
     
     /**
@@ -784,23 +788,45 @@ class MSME_Business_Manager {
             <div class="card">
                 <h2>Quick Actions</h2>
                 <button type="button" class="button button-secondary" onclick="testDatabaseConnection()">Test Database Connection</button>
+                <button type="button" class="button button-secondary" onclick="debugSMTPTest()" style="margin-left: 10px;">Test SMTP Email</button>
                 <div id="db-test-result"></div>
+                <div id="smtp-test-result"></div>
             </div>
-        </div>
-        
-        <script>
-        function testDatabaseConnection() {
-            var xhr = new XMLHttpRequest();
-            xhr.open('POST', ajaxurl, true);
-            xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
-            xhr.onreadystatechange = function() {
-                if (xhr.readyState === 4 && xhr.status === 200) {
-                    document.getElementById('db-test-result').innerHTML = xhr.responseText;
+            
+            <script>
+            console.log('Admin page loaded, checking functions...');
+            
+            // Check if functions exist
+            console.log('testSMTPEmail exists:', typeof testSMTPEmail !== 'undefined');
+            console.log('ajaxurl available:', typeof ajaxurl !== 'undefined');
+            console.log('ajaxurl value:', typeof ajaxurl !== 'undefined' ? ajaxurl : 'NOT SET');
+            
+            function debugSMTPTest() {
+                console.log('Debug SMTP Test clicked');
+                
+                // Check if our function exists
+                if (typeof testSMTPEmail === 'function') {
+                    console.log('Calling testSMTPEmail function...');
+                    testSMTPEmail();
+                } else {
+                    console.error('testSMTPEmail function not found!');
+                    document.getElementById('smtp-test-result').innerHTML = 
+                        '<div style="color: red;">❌ JavaScript function not loaded. Check console for details.</div>';
                 }
-            };
-            xhr.send('action=msme_test_connection');
-        }
-        </script>
+            }
+            
+            function testDatabaseConnection() {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', ajaxurl, true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+                        document.getElementById('db-test-result').innerHTML = xhr.responseText;
+                    }
+                };
+                xhr.send('action=msme_test_connection');
+            }
+            </script>
         <?php
     }
     
@@ -952,41 +978,28 @@ class MSME_Business_Manager {
     /**
      * Enqueue registration page assets
      */
+    // Enqueue for both registration page AND admin pages
     private function enqueue_registration_assets() {
-        // Enqueue CSS
+        // Existing registration page CSS/JS
         wp_enqueue_style(
-            'msme-registration',
-            MSME_PLUGIN_URL . 'assets/css/registration.css',
-            array(),
-            MSME_PLUGIN_VERSION
-        );
-        
-        // Enqueue JavaScript
+            'msme-registration', 
+            MSME_PLUGIN_URL . 'assets/css/registration.css', 
+            array(), 
+            MSME_PLUGIN_VERSION);
+            
         wp_enqueue_script(
-            'msme-registration',
-            MSME_PLUGIN_URL . 'assets/js/registration.js',
-            array('jquery'),
-            MSME_PLUGIN_VERSION,
-            true
-        );
+            'msme-registration', 
+            MSME_PLUGIN_URL . 
+            'assets/js/registration.js', 
+            array('jquery'), 
+            MSME_PLUGIN_VERSION, 
+            true);
         
-        // Localize script for AJAX
-        $localize_data = array(
+        // Localize for both registration and admin use
+        wp_localize_script('msme-registration', 'msme_ajax', array(
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('msme_registration_nonce')
-        );
-        
-        // Add current user data if logged in
-        if (is_user_logged_in()) {
-            $current_user = wp_get_current_user();
-            $localize_data['current_user'] = array(
-                'display_name' => $current_user->display_name,
-                'email' => $current_user->user_email,
-                'id' => $current_user->ID
-            );
-        }
-        
-        wp_localize_script('msme-registration', 'msme_ajax', $localize_data);
+        ));
     }
     
     /**
@@ -1213,6 +1226,31 @@ class MSME_Business_Manager {
         </body>
         </html>
         <?php
+    }
+    
+    /**
+     * Enqueue assets for admin pages
+     */
+    public function enqueue_admin_assets($hook) {
+        // Only load on our admin pages
+        if (strpos($hook, 'msme-') === false) {
+            return;
+        }
+        
+        wp_enqueue_script(
+            'msme-admin',
+            MSME_PLUGIN_URL . 'assets/js/registration.js',
+            array('jquery'),
+            MSME_PLUGIN_VERSION,
+            true
+        );
+        
+        wp_localize_script('msme-admin', 'msme_ajax', array(
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('msme_admin_nonce')
+        ));
+        
+        echo '<script>console.log("MSME admin JS loaded on: ' . $hook . '");</script>';
     }
     
     /**
@@ -1555,6 +1593,181 @@ class MSME_Business_Manager {
         <?php
     }
     
+    /**
+     * Test SMTP email sending with comprehensive logging
+     */
+    public function test_smtp_email() {
+        // Security check
+        if (!current_user_can('manage_network')) {
+            wp_die('Unauthorized access');
+        }
+        
+        echo '<div style="font-family: monospace; background: #f9f9f9; padding: 20px; border-radius: 5px;">';
+        echo '<h3>[EMAIL] SMTP Test Process Log</h3>';
+        
+        // Step 1: Check SMTP configuration
+        echo '<p><strong>Step 1:</strong> Checking SMTP configuration...</p>';
+        $plugin_options = get_site_option('msme_plugin_options', array());
+        
+        if (empty($plugin_options['smtp_user']) || empty($plugin_options['smtp_pass'])) {
+            echo '<div style="color: red;">[X] SMTP credentials not configured!</div>';
+            echo '<p>Please go to Network Admin → MSME Manager → SMTP Settings and configure Gmail credentials.</p>';
+            echo '</div>';
+            wp_die();
+        }
+        
+        echo '<div style="color: green;">[✓] SMTP credentials found</div>';
+        echo '<p>SMTP User: ' . $plugin_options['smtp_user'] . '</p>';
+        
+        // Step 2: Test email configuration
+        echo '<p><strong>Step 2:</strong> Preparing test email...</p>';
+        
+        // Updated test email configuration as requested
+        $test_email = isset($_POST['test_email']) && !empty($_POST['test_email']) 
+            ? sanitize_email($_POST['test_email']) 
+            : 'rizahnst@gmail.com'; // Updated default as shown in your image
+        
+        $subject = '[SMTP Test] Cobalah.id - ' . current_time('Y-m-d H:i:s');
+        
+        $message = "
+        <html>
+        <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
+            <div style='max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1);'>
+                
+                <!-- Header -->
+                <div style='background: linear-gradient(135deg, #0073aa, #005a87); padding: 25px; text-align: center;'>
+                    <h1 style='color: white; margin: 0; font-size: 24px;'>&#x1F4E7; SMTP Configuration Test</h1>
+                    <p style='color: #e6f3ff; margin: 5px 0 0 0;'>Cobalah.id - Website Gratis untuk UMKM Indonesia</p>
+                </div>
+                
+                <!-- Content -->
+                <div style='padding: 25px;'>
+                    <div style='background: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px; padding: 15px; margin-bottom: 20px;'>
+                        <h3 style='margin: 0 0 10px 0; color: #155724;'>&#x2705; SMTP Configuration Working!</h3>
+                        <p style='margin: 0; color: #155724;'>Your Gmail SMTP setup is functioning correctly.</p>
+                    </div>
+                    
+                    <table style='width: 100%; border-collapse: collapse; margin-bottom: 20px;'>
+                        <tr>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6; font-weight: bold; width: 120px;'>&#x1F4E4; From:</td>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6;'>tidak-dibalas@cobalah.id</td>
+                        </tr>
+                        <tr>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6; font-weight: bold;'>&#x1F4E5; To:</td>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6;'>{$test_email}</td>
+                        </tr>
+                        <tr>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6; font-weight: bold;'>&#x23F0; Time:</td>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6;'>" . current_time('Y-m-d H:i:s') . "</td>
+                        </tr>
+                        <tr>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6; font-weight: bold;'>&#x1F4BB; Server:</td>
+                            <td style='padding: 8px; border-bottom: 1px solid #dee2e6;'>" . $_SERVER['HTTP_HOST'] . "</td>
+                        </tr>
+                    </table>
+                    
+                    <div style='background: #f8f9fa; border-left: 4px solid #0073aa; padding: 15px; margin-bottom: 20px;'>
+                        <h4 style='margin: 0 0 10px 0; color: #0073aa;'>&#x2139; Next Steps:</h4>
+                        <ul style='margin: 0; padding-left: 20px; color: #495057;'>
+                            <li>SMTP configuration is working properly</li>
+                            <li>Emails will be delivered to recipient inboxes</li>
+                            <li>OTP verification emails are ready to use</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <!-- Footer -->
+                <div style='background: #f8f9fa; padding: 15px; text-align: center; border-top: 1px solid #dee2e6;'>
+                    <p style='margin: 0; font-size: 12px; color: #6c757d;'>
+                        <strong>Email otomatis dari Cobalah.id</strong><br>
+                        Support: bantuan@cobalah.id
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>
+        ";
+        
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: Cobalah.id - Website Gratis untuk UMKM Indonesia <tidak-dibalas@cobalah.id>',
+            'Reply-To: bantuan@cobalah.id'
+        );
+        
+        echo '<div style="color: green;">[✓] Email prepared</div>';
+        echo '<p>To: ' . $test_email . '</p>';
+        echo '<p>Subject: ' . $subject . '</p>';
+        
+        // Step 3: Send email with error capturing
+        echo '<p><strong>Step 3:</strong> Attempting to send email...</p>';
+        
+        // Capture any PHP errors
+        ob_start();
+        $sent = wp_mail($test_email, $subject, $message, $headers);
+        $email_errors = ob_get_clean();
+        
+        if ($email_errors) {
+            echo '<div style="color: orange;">[!] PHP Warnings/Errors:</div>';
+            echo '<pre style="background: #fff3cd; padding: 10px;">' . htmlspecialchars($email_errors) . '</pre>';
+        }
+        
+        // Step 4: Check result
+        echo '<p><strong>Step 4:</strong> Checking send result...</p>';
+        
+        if ($sent) {
+            echo '<div style="color: green; background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+            echo '<strong>[✓] Email Sent Successfully!</strong><br>';
+            echo 'Check your inbox: ' . $test_email . '<br>';
+            echo 'Also check spam folder if not in inbox.';
+            echo '</div>';
+        } else {
+            echo '<div style="color: red; background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+            echo '<strong>[X] Email Sending Failed!</strong>';
+            echo '</div>';
+            
+            // Additional debugging
+            global $phpmailer;
+            if (isset($phpmailer)) {
+                echo '<p><strong>PHPMailer Error Info:</strong></p>';
+                echo '<pre style="background: #f8d7da; padding: 10px;">';
+                echo 'ErrorInfo: ' . $phpmailer->ErrorInfo . "\n";
+                echo 'Host: ' . $phpmailer->Host . "\n";
+                echo 'Port: ' . $phpmailer->Port . "\n";
+                echo 'Username: ' . $phpmailer->Username . "\n";
+                echo 'SMTPAuth: ' . ($phpmailer->SMTPAuth ? 'Yes' : 'No') . "\n";
+                echo '</pre>';
+            }
+        }
+        
+        // Step 5: Test SMTP connection directly
+        echo '<p><strong>Step 5:</strong> Testing direct SMTP connection...</p>';
+        
+        $smtp_host = 'smtp.gmail.com';
+        $smtp_port = 587;
+        
+        $connection = @fsockopen($smtp_host, $smtp_port, $errno, $errstr, 10);
+        if ($connection) {
+            echo '<div style="color: green;">[✓] Direct SMTP connection successful</div>';
+            fclose($connection);
+        } else {
+            echo '<div style="color: red;">[X] Direct SMTP connection failed: ' . $errstr . ' (Error: ' . $errno . ')</div>';
+        }
+        
+        echo '</div>';
+        wp_die();
+    }
+    
+    
+    /**
+     * Test business registration submission
+     */
+    public function submit_business_registration() {
+        echo '<div style="color: green; background: #d4edda; padding: 15px; border-radius: 5px;">';
+        echo '[TEST] Registration AJAX handler called successfully!<br>';
+        echo 'Form data received: ' . print_r($_POST, true);
+        echo '</div>';
+        wp_die();
+    }
 }
 // Initialize the plugin
 MSME_Business_Manager::get_instance();
