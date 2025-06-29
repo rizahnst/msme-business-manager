@@ -84,13 +84,21 @@ class MSME_Business_Manager {
         
         // AJAX hooks (for future use)
         add_action('wp_ajax_msme_test_connection', array($this, 'test_database_connection'));
-        
-        // AJAX hooks
         add_action('wp_ajax_msme_test_connection', array($this, 'test_database_connection'));
         add_action('wp_ajax_check_subdomain_availability', array($this, 'check_subdomain_availability'));
         add_action('wp_ajax_nopriv_check_subdomain_availability', array($this, 'check_subdomain_availability'));
         add_action('wp_ajax_submit_business_registration', array($this, 'submit_business_registration'));
         add_action('wp_ajax_nopriv_submit_business_registration', array($this, 'submit_business_registration'));
+        add_action('wp_ajax_verify_otp_code', array($this, 'verify_otp_code'));
+        add_action('wp_ajax_nopriv_verify_otp_code', array($this, 'verify_otp_code'));
+        
+        // Schedule daily cleanup of expired registrations
+        if (!wp_next_scheduled('msme_daily_cleanup')) {
+            wp_schedule_event(time(), 'daily', 'msme_daily_cleanup');
+        }
+        add_action('msme_daily_cleanup', array($this, 'cleanup_expired_registrations'));
+        
+        add_action('wp_ajax_manual_cleanup_registrations', array($this, 'manual_cleanup_registrations'));
     }
     
     /**
@@ -793,6 +801,27 @@ class MSME_Business_Manager {
                 <div id="smtp-test-result"></div>
             </div>
             
+            <div class="card">
+                <h2>Database Maintenance</h2>
+                <button type="button" class="button button-secondary" onclick="cleanupExpiredRegistrations()">Cleanup Expired Registrations</button>
+                <div id="cleanup-result"></div>
+            </div>
+            
+            <script>
+            function cleanupExpiredRegistrations() {
+                document.getElementById('cleanup-result').innerHTML = '<p>Running cleanup...</p>';
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', ajaxurl, true);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+                        document.getElementById('cleanup-result').innerHTML = xhr.responseText;
+                    }
+                };
+                xhr.send('action=manual_cleanup_registrations');
+            }
+            </script>
+            
             <script>
             console.log('Admin page loaded, checking functions...');
             
@@ -976,30 +1005,43 @@ class MSME_Business_Manager {
     }
     
     /**
-     * Enqueue registration page assets
+     * Enqueue assets for registration page
      */
-    // Enqueue for both registration page AND admin pages
     private function enqueue_registration_assets() {
-        // Existing registration page CSS/JS
+        // Enqueue CSS
         wp_enqueue_style(
-            'msme-registration', 
-            MSME_PLUGIN_URL . 'assets/css/registration.css', 
-            array(), 
-            MSME_PLUGIN_VERSION);
-            
-        wp_enqueue_script(
-            'msme-registration', 
-            MSME_PLUGIN_URL . 
-            'assets/js/registration.js', 
-            array('jquery'), 
-            MSME_PLUGIN_VERSION, 
-            true);
+            'msme-registration',
+            MSME_PLUGIN_URL . 'assets/css/registration.css',
+            array(),
+            MSME_PLUGIN_VERSION
+        );
         
-        // Localize for both registration and admin use
-        wp_localize_script('msme-registration', 'msme_ajax', array(
+        // Enqueue JavaScript
+        wp_enqueue_script(
+            'msme-registration',
+            MSME_PLUGIN_URL . 'assets/js/registration.js',
+            array('jquery'),
+            MSME_PLUGIN_VERSION,
+            true
+        );
+        
+        // Localize script for AJAX
+        $localize_data = array(
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('msme_registration_nonce')
-        ));
+        );
+        
+        // Add current user data if logged in
+        if (is_user_logged_in()) {
+            $current_user = wp_get_current_user();
+            $localize_data['current_user'] = array(
+                'display_name' => $current_user->display_name,
+                'email' => $current_user->user_email,
+                'id' => $current_user->ID
+            );
+        }
+        
+        wp_localize_script('msme-registration', 'msme_ajax', $localize_data);
     }
     
     /**
@@ -1009,6 +1051,8 @@ class MSME_Business_Manager {
         // Check if user just completed Google auth
         $google_auth_success = isset($_GET['google_auth']) && $_GET['google_auth'] === 'success';
         $step = isset($_GET['step']) ? $_GET['step'] : '1';
+        
+        
         
         // Auto-advance to step 2 if Google auth successful
         if ($google_auth_success && is_user_logged_in()) {
@@ -1097,6 +1141,16 @@ class MSME_Business_Manager {
                             ?>
                         </div>
                         
+                        <div class="debug-info" style="background: #f0f8ff; padding: 15px; margin: 15px 0; border-radius: 5px; font-size: 12px;">
+                            <strong>Debug - Current User Data:</strong><br>
+                            <?php 
+                            $current_user = wp_get_current_user();
+                            echo 'Display Name: ' . $current_user->display_name . '<br>';
+                            echo 'Email: ' . $current_user->user_email . '<br>';
+                            echo 'User ID: ' . $current_user->ID . '<br>';
+                            ?>
+                        </div>
+                        
                         <div class="login-info">
                             <h4>Mengapa menggunakan Google?</h4>
                             <ul>
@@ -1117,14 +1171,16 @@ class MSME_Business_Manager {
                             <div class="form-row">
                                 <div class="form-group">
                                     <label for="owner_name">Nama Pemilik Bisnis *</label>
-                                    <input type="text" id="owner_name" name="owner_name" required readonly 
+                                    <input type="text" id="owner_name" name="owner_name" required 
                                            placeholder="Nama akan otomatis terisi dari Google">
+                                    <small>Anda dapat mengedit nama jika diperlukan</small>
                                 </div>
                                 
                                 <div class="form-group">
                                     <label for="owner_email">Email *</label>
                                     <input type="email" id="owner_email" name="owner_email" required readonly
                                            placeholder="Email akan otomatis terisi dari Google">
+                                    <small>Email tidak dapat diubah (dari akun Google Anda)</small>
                                 </div>
                             </div>
     
@@ -1174,7 +1230,7 @@ class MSME_Business_Manager {
                                 </div>
                                 <div class="subdomain-input">
                                     <input type="text" id="subdomain" name="subdomain" required 
-                                           placeholder="namatoko" pattern="[a-z0-9-]+" maxlength="50">
+                                        placeholder="namatoko" pattern="[a-z0-9\-]+" maxlength="50">
                                     <span class="domain-suffix">.cobalah.id</span>
                                 </div>
                                 <div id="subdomain-check" class="subdomain-check"></div>
@@ -1199,22 +1255,90 @@ class MSME_Business_Manager {
                     <!-- Step 3: Email Verification -->
                     <div class="form-step" id="form-step-3" <?php echo ($step != '3') ? 'style="display: none;"' : ''; ?>>
                         <h3>Verifikasi Email</h3>
-                        <p>Kode verifikasi telah dikirim ke email Anda. Masukkan kode untuk melanjutkan.</p>
+                        
+                        <!-- Clear Gmail Instructions -->
+                        <div class="email-check-instructions">
+                            <div class="instruction-header">
+                                <h4 style="color: #0073aa; margin: 0 0 15px 0;">[EMAIL] Silakan Cek Email Gmail Anda Sekarang!</h4>
+                            </div>
+                            
+                            <div class="step-by-step-guide">
+                                <div class="instruction-step">
+                                    <span class="step-number">1</span>
+                                    <div class="step-content">
+                                        <strong>Buka Gmail Anda</strong><br>
+                                        <small>Gunakan aplikasi Gmail di HP atau buka <a href="https://gmail.com" target="_blank" style="color: #0073aa; font-weight: bold;">gmail.com</a> di browser</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="instruction-step">
+                                    <span class="step-number">2</span>
+                                    <div class="step-content">
+                                        <strong>Cari email dengan subjek:</strong><br>
+                                        <div class="email-subject-box">
+                                            <strong>[Cobalah.id] OTP Kode Verifikasi</strong>
+                                        </div>
+                                        <small>Email ini dikirim dari: tidak-dibalas@cobalah.id</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="instruction-step">
+                                    <span class="step-number">3</span>
+                                    <div class="step-content">
+                                        <strong>Ambil kode 6 angka</strong><br>
+                                        <small>Di dalam email tersebut, akan ada <strong>kode 6 angka</strong> (contoh: 123456)</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="instruction-step">
+                                    <span class="step-number">4</span>
+                                    <div class="step-content">
+                                        <strong>Masukkan kode di bawah ini</strong><br>
+                                        <small>Ketik kode 6 angka tersebut pada kolom di bawah</small>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Troubleshooting Tips -->
+                            <div class="troubleshooting-tips">
+                                <h4 style="color: #d63384; margin: 15px 0 10px 0;">[!] Tidak Menemukan Email?</h4>
+                                <ul style="margin: 0; padding-left: 20px; font-size: 14px;">
+                                    <li><strong>Cek folder Spam/Junk</strong> - Email mungkin masuk ke spam</li>
+                                    <li><strong>Cek tab Promosi</strong> - Jika menggunakan Gmail di browser</li>
+                                    <li><strong>Tunggu 1-2 menit</strong> - Email kadang butuh waktu untuk sampai</li>
+                                    <li><strong>Refresh/muat ulang</strong> kotak masuk Gmail Anda</li>
+                                </ul>
+                            </div>
+                        </div>
                         
                         <form id="email-verification-form">
                             <div class="form-group">
-                                <label for="otp_code">Kode Verifikasi (6 digit) *</label>
+                                <label for="otp_code">[#] Masukkan Kode 6 Angka dari Email *</label>
                                 <input type="text" id="otp_code" name="otp_code" required 
-                                       placeholder="123456" maxlength="6" pattern="[0-9]{6}">
+                                       placeholder="123456" maxlength="6" pattern="[0-9]{6}"
+                                       style="font-size: 24px; text-align: center; letter-spacing: 5px; font-family: monospace;">
+                                <small>Contoh: 123456 (tanpa spasi atau tanda baca)</small>
                             </div>
                             
-                            <button type="submit" class="btn-submit">Verifikasi Email</button>
+                            <button type="submit" class="btn-submit">[✓] Verifikasi Email</button>
                             
                             <div class="resend-otp">
-                                <p>Tidak menerima kode? <a href="#" id="resend-otp-link">Kirim ulang</a></p>
-                                <div id="resend-countdown" style="display: none;">
+                                <p style="text-align: center; margin: 20px 0;">
+                                    <strong>Masih belum menerima email?</strong><br>
+                                    <a href="#" id="resend-otp-link" style="color: #0073aa; font-weight: bold;">[EMAIL] Kirim Ulang Kode Verifikasi</a>
+                                </p>
+                                <div id="resend-countdown" style="display: none; text-align: center; color: #666;">
                                     Kirim ulang dalam <span id="countdown">60</span> detik
                                 </div>
+                            </div>
+                            
+                            <!-- Help Section -->
+                            <div class="help-section">
+                                <p style="text-align: center; margin: 25px 0 0 0; padding: 15px; background: #f8f9fa; border-radius: 5px; font-size: 13px;">
+                                    <strong>[?] Apa itu Kode Verifikasi (OTP)?</strong><br>
+                                    Kode verifikasi adalah <strong>6 angka rahasia</strong> yang kami kirim ke email Anda untuk memastikan 
+                                    bahwa email tersebut benar-benar milik Anda. Ini untuk keamanan akun bisnis Anda.
+                                </p>
                             </div>
                         </form>
                     </div>
@@ -1334,9 +1458,13 @@ class MSME_Business_Manager {
         
         global $wpdb;
         
-        // Check if subdomain exists in registrations table
+        // Run cleanup for expired registrations
+        $this->cleanup_expired_registrations();
+        
+        // Check if subdomain exists in active registrations only
         $existing_registration = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$wpdb->base_prefix}msme_registrations WHERE subdomain = %s",
+            "SELECT id FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE subdomain = %s AND status IN ('verified', 'approved')",
             $subdomain
         ));
         
@@ -1427,7 +1555,7 @@ class MSME_Business_Manager {
                 <!-- Header -->
                 <div style='background: linear-gradient(135deg, #0073aa, #005a87); padding: 30px 20px; text-align: center;'>
                     <h1 style='color: white; margin: 0; font-size: 28px;'>Cobalah.id</h1>
-                    <p style='color: #e6f3ff; margin: 5px 0 0 0; font-size: 14px;'>Platform Landing Page Gratis untuk UMKM Indonesia</p>
+                    <p style='color: #e6f3ff; margin: 5px 0 0 0; font-size: 14px;'>Website Gratis untuk UMKM Indonesia</p>
                 </div>
                 
                 <!-- Content -->
@@ -1757,17 +1885,401 @@ class MSME_Business_Manager {
         wp_die();
     }
     
-    
     /**
-     * Test business registration submission
+     * Handle business registration submission
      */
     public function submit_business_registration() {
-        echo '<div style="color: green; background: #d4edda; padding: 15px; border-radius: 5px;">';
-        echo '[TEST] Registration AJAX handler called successfully!<br>';
-        echo 'Form data received: ' . print_r($_POST, true);
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_registration_nonce')) {
+            wp_send_json_error(array('message' => 'Invalid nonce'));
+            return;
+        }
+        
+        // Validate required fields
+        $required_fields = array('owner_name', 'owner_email', 'business_name', 'business_category', 'subdomain');
+        foreach ($required_fields as $field) {
+            if (empty($_POST[$field])) {
+                wp_send_json_error(array('message' => "Field {$field} is required"));
+                return;
+            }
+        }
+        
+        // Sanitize input data
+        $owner_name = sanitize_text_field($_POST['owner_name']);
+        $owner_email = sanitize_email($_POST['owner_email']);
+        $business_name = sanitize_text_field($_POST['business_name']);
+        $business_category = sanitize_text_field($_POST['business_category']);
+        $subdomain = sanitize_text_field($_POST['subdomain']);
+        $phone_number = sanitize_text_field($_POST['phone_number']);
+        $business_address = sanitize_textarea_field($_POST['business_address']);
+        
+        // Validate email
+        if (!is_email($owner_email)) {
+            wp_send_json_error(array('message' => 'Invalid email address'));
+            return;
+        }
+        
+        // Validate subdomain format
+        if (!preg_match('/^[a-z0-9-]+$/', $subdomain) || strlen($subdomain) < 3) {
+            wp_send_json_error(array('message' => 'Invalid subdomain format'));
+            return;
+        }
+        
+        // Clean up any expired/abandoned registrations first
+        $this->prepare_clean_registration($owner_email, $subdomain);
+        
+        global $wpdb;
+        
+        // Check subdomain availability (only approved/verified registrations)
+        $existing_registration = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE subdomain = %s AND status IN ('verified', 'approved')",
+            $subdomain
+        ));
+        
+        if ($existing_registration) {
+            wp_send_json_error(array('message' => 'Subdomain sudah digunakan oleh bisnis yang aktif'));
+            return;
+        }
+        
+        // Check in WordPress multisite
+        $existing_site = get_site_by_path($subdomain . '.cobalah.id', '/');
+        if ($existing_site) {
+            wp_send_json_error(array('message' => 'Subdomain sudah ada di sistem'));
+            return;
+        }
+        
+        // Check if email already has verified/approved registration
+        $existing_email = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE email = %s AND status IN ('verified', 'approved')",
+            $owner_email
+        ));
+        
+        if ($existing_email) {
+            wp_send_json_error(array('message' => 'Email sudah terdaftar dengan bisnis aktif'));
+            return;
+        }
+        
+        // Generate OTP
+        $otp_code = sprintf('%06d', wp_rand(100000, 999999));
+        $otp_expires = date('Y-m-d H:i:s', current_time('timestamp') + (15 * 60)); // 15 minutes
+        
+        // Get Google ID if logged in
+        $google_id = '';
+        if (is_user_logged_in()) {
+            $current_user = wp_get_current_user();
+            $google_id = get_user_meta($current_user->ID, 'nsl-google-id', true);
+            if (empty($google_id)) {
+                $google_id = $current_user->ID; // Fallback to user ID
+            }
+        }
+        
+        // Insert registration data
+        $result = $wpdb->insert(
+            $wpdb->base_prefix . 'msme_registrations',
+            array(
+                'email' => $owner_email,
+                'google_id' => $google_id,
+                'business_name' => $business_name,
+                'subdomain' => $subdomain,
+                'business_category' => $business_category,
+                'business_address' => $business_address,
+                'phone_number' => $phone_number,
+                'status' => 'pending',
+                'otp_code' => $otp_code,
+                'otp_expires' => $otp_expires,
+                'created_date' => current_time('mysql')
+            ),
+            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
+        );
+        
+        if ($result === false) {
+            wp_send_json_error(array('message' => 'Database error: ' . $wpdb->last_error));
+            return;
+        }
+        
+        // Send OTP email
+        $email_sent = $this->send_otp_email($owner_email, $owner_name, $otp_code, $business_name);
+        
+        if (!$email_sent) {
+            // Still return success but log the email issue
+            error_log('MSME: OTP email failed to send to ' . $owner_email);
+            wp_send_json_success(array(
+                'message' => 'Registration successful but email sending failed. Please contact support.',
+                'step' => 3,
+                'email_status' => 'failed'
+            ));
+            return;
+        }
+        
+        wp_send_json_success(array(
+            'message' => 'Registration successful! OTP sent to your email.',
+            'step' => 3,
+            'email_status' => 'sent',
+            'otp_expires' => $otp_expires
+        ));
+    }
+    
+    /**
+     * Handle OTP verification
+     */
+    public function verify_otp_code() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_registration_nonce')) {
+            wp_send_json_error(array('message' => 'Invalid nonce'));
+            return;
+        }
+        
+        // Validate required fields
+        if (empty($_POST['otp_code']) || empty($_POST['email'])) {
+            wp_send_json_error(array('message' => 'OTP code and email are required'));
+            return;
+        }
+        
+        $otp_code = sanitize_text_field($_POST['otp_code']);
+        $email = sanitize_email($_POST['email']);
+        
+        // Validate OTP format (6 digits)
+        if (!preg_match('/^\d{6}$/', $otp_code)) {
+            wp_send_json_error(array('message' => 'Kode OTP harus 6 angka'));
+            return;
+        }
+        
+        global $wpdb;
+        
+        // Find registration with matching email and OTP
+        $registration = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE email = %s AND otp_code = %s AND status = 'pending'",
+            $email, $otp_code
+        ));
+        
+        if (!$registration) {
+            wp_send_json_error(array('message' => 'Kode OTP salah atau tidak ditemukan'));
+            return;
+        }
+        
+        // Check if OTP is expired
+        $current_time = current_time('mysql');
+        if (strtotime($current_time) > strtotime($registration->otp_expires)) {
+            wp_send_json_error(array(
+                'message' => 'Kode OTP sudah kedaluwarsa. Silakan minta kode baru.',
+                'expired' => true
+            ));
+            return;
+        }
+        
+        // Update registration status to verified
+        $update_result = $wpdb->update(
+            $wpdb->base_prefix . 'msme_registrations',
+            array(
+                'status' => 'verified',
+                'otp_code' => null, // Clear OTP code for security
+                'otp_expires' => null
+            ),
+            array('id' => $registration->id),
+            array('%s', '%s', '%s'),
+            array('%d')
+        );
+        
+        if ($update_result === false) {
+            wp_send_json_error(array('message' => 'Database error: ' . $wpdb->last_error));
+            return;
+        }
+        
+        // Send notification to admin about new verified registration
+        $this->notify_admin_new_registration($registration);
+        
+        wp_send_json_success(array(
+            'message' => 'Verifikasi email berhasil! Pendaftaran Anda akan diproses oleh admin dalam 24 jam.',
+            'status' => 'verified',
+            'business_name' => $registration->business_name,
+            'subdomain' => $registration->subdomain
+        ));
+    }
+    
+    /**
+     * Send notification to admin about new verified registration
+     */
+    private function notify_admin_new_registration($registration) {
+        $admin_email = get_site_option('admin_email');
+        $subject = '[Cobalah.id] Pendaftaran Bisnis Baru Menunggu Persetujuan';
+        
+        $message = "
+        <html>
+        <body style='font-family: Arial, sans-serif; line-height: 1.6;'>
+            <h2 style='color: #0073aa;'>Pendaftaran Bisnis Baru</h2>
+            
+            <p>Ada pendaftaran bisnis baru yang telah diverifikasi dan menunggu persetujuan:</p>
+            
+            <table style='border-collapse: collapse; width: 100%; margin: 20px 0;'>
+                <tr style='background: #f8f9fa;'>
+                    <td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Nama Bisnis</td>
+                    <td style='padding: 10px; border: 1px solid #ddd;'>{$registration->business_name}</td>
+                </tr>
+                <tr>
+                    <td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Subdomain</td>
+                    <td style='padding: 10px; border: 1px solid #ddd;'>{$registration->subdomain}.cobalah.id</td>
+                </tr>
+                <tr style='background: #f8f9fa;'>
+                    <td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Email</td>
+                    <td style='padding: 10px; border: 1px solid #ddd;'>{$registration->email}</td>
+                </tr>
+                <tr>
+                    <td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Kategori</td>
+                    <td style='padding: 10px; border: 1px solid #ddd;'>{$registration->business_category}</td>
+                </tr>
+                <tr style='background: #f8f9fa;'>
+                    <td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Alamat</td>
+                    <td style='padding: 10px; border: 1px solid #ddd;'>{$registration->business_address}</td>
+                </tr>
+                <tr>
+                    <td style='padding: 10px; border: 1px solid #ddd; font-weight: bold;'>Tanggal Daftar</td>
+                    <td style='padding: 10px; border: 1px solid #ddd;'>{$registration->created_date}</td>
+                </tr>
+            </table>
+            
+            <p><strong>Silakan login ke admin panel untuk menyetujui atau menolak pendaftaran ini.</strong></p>
+            
+            <p>
+                <a href='" . admin_url('network/admin.php?page=msme-business-manager') . "' 
+                   style='background: #0073aa; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;'>
+                   Buka Admin Panel
+                </a>
+            </p>
+            
+            <hr style='margin: 30px 0;'>
+            <p style='font-size: 12px; color: #666;'>
+                Email otomatis dari Cobalah.id<br>
+                Website Gratis untuk UMKM Indonesia
+            </p>
+        </body>
+        </html>
+        ";
+        
+        $headers = array(
+            'Content-Type: text/html; charset=UTF-8',
+            'From: Cobalah.id - Website Gratis untuk UMKM Indonesia <tidak-dibalas@cobalah.id>',
+            'Reply-To: bantuan@cobalah.id'
+        );
+        
+        wp_mail($admin_email, $subject, $message, $headers);
+    }
+    
+    /**
+     * Clean up expired and abandoned registrations
+     */
+    public function cleanup_expired_registrations($email = null) {
+        global $wpdb;
+        
+        $current_time = current_time('mysql');
+        
+        if ($email) {
+            // Clean up specific email's abandoned registrations
+            $deleted = $wpdb->delete(
+                $wpdb->base_prefix . 'msme_registrations',
+                array(
+                    'email' => $email,
+                    'status' => 'pending'
+                ),
+                array('%s', '%s')
+            );
+            
+            error_log("MSME: Cleaned up {$deleted} abandoned registration(s) for email: {$email}");
+            return $deleted;
+        } else {
+            // Clean up all expired registrations (OTP expired + 1 hour grace period)
+            $expired_time = date('Y-m-d H:i:s', current_time('timestamp') - (60 * 60)); // 1 hour ago
+            
+            $deleted = $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$wpdb->base_prefix}msme_registrations 
+                 WHERE status = 'pending' 
+                 AND (otp_expires < %s OR otp_expires IS NULL)
+                 AND created_date < %s",
+                $current_time,
+                $expired_time
+            ));
+            
+            error_log("MSME: Cleaned up {$deleted} expired registration(s)");
+            return $deleted;
+        }
+    }
+    
+    /**
+     * Check and clean up existing registration before allowing new one
+     */
+    private function prepare_clean_registration($email, $subdomain) {
+        global $wpdb;
+        
+        // Check if user has any pending registrations
+        $existing_registrations = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, subdomain, created_date, otp_expires FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE email = %s AND status = 'pending'",
+            $email
+        ));
+        
+        if ($existing_registrations) {
+            // Clean up all pending registrations for this email
+            $cleaned = $this->cleanup_expired_registrations($email);
+            
+            error_log("MSME: User {$email} had {$cleaned} pending registration(s), cleaned up for fresh start");
+            return true;
+        }
+        
+        // Also check if the specific subdomain exists in pending status
+        $subdomain_exists = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE subdomain = %s AND status = 'pending'",
+            $subdomain
+        ));
+        
+        if ($subdomain_exists) {
+            // Check if this is an expired registration
+            $expired_subdomain = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, email, otp_expires FROM {$wpdb->base_prefix}msme_registrations 
+                 WHERE subdomain = %s AND status = 'pending'",
+                $subdomain
+            ));
+            
+            if ($expired_subdomain) {
+                $current_time = current_time('mysql');
+                
+                // If OTP expired or very old (1+ hour), clean it up
+                if (!$expired_subdomain->otp_expires || 
+                    strtotime($current_time) > strtotime($expired_subdomain->otp_expires) + (60 * 60)) {
+                    
+                    $wpdb->delete(
+                        $wpdb->base_prefix . 'msme_registrations',
+                        array('id' => $expired_subdomain->id),
+                        array('%d')
+                    );
+                    
+                    error_log("MSME: Cleaned up expired subdomain registration: {$subdomain}");
+                    return true;
+                }
+            }
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Manual cleanup via admin (AJAX)
+     */
+    public function manual_cleanup_registrations() {
+        if (!current_user_can('manage_network')) {
+            wp_die('Unauthorized');
+        }
+        
+        $deleted = $this->cleanup_expired_registrations();
+        echo '<div style="color: green; background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0;">';
+        echo '<strong>[✓] Cleanup Completed!</strong><br>';
+        echo "Removed {$deleted} expired/abandoned registration(s).";
         echo '</div>';
         wp_die();
     }
+    
 }
 // Initialize the plugin
 MSME_Business_Manager::get_instance();
