@@ -4,7 +4,50 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize registration form functionality
     initRegistrationForm();
+    
+    // Auto-fill user data if available
+    autoFillUserData();
 });
+// Add this new function
+function autoFillUserData() {
+    console.log('Checking for user data auto-fill...');
+    
+    // Check if user data is available
+    if (typeof msme_ajax !== 'undefined' && msme_ajax.current_user) {
+        console.log('User data found:', msme_ajax.current_user);
+        
+        const ownerNameField = document.getElementById('owner_name');
+        const ownerEmailField = document.getElementById('owner_email');
+        
+        if (ownerNameField && ownerEmailField) {
+            // Fill the fields
+            ownerNameField.value = msme_ajax.current_user.display_name || '';
+            ownerEmailField.value = msme_ajax.current_user.email || '';
+            
+            // Remove readonly from name field (allow editing)
+            ownerNameField.removeAttribute('readonly');
+            
+            console.log('Auto-fill completed');
+            console.log('Name:', ownerNameField.value);
+            console.log('Email:', ownerEmailField.value);
+        } else {
+            console.log('Form fields not found yet, will retry...');
+            // Retry after a short delay if fields aren't ready
+            setTimeout(autoFillUserData, 500);
+        }
+    } else {
+        console.log('No user data available or user not logged in');
+    }
+}
+
+// Update the continue button function
+function continueToBusinessForm() {
+    console.log('Continue to business form clicked');
+    
+    // Auto-fill user data and show step 2
+    autoFillUserData();
+    showStep(2);
+}
 
 function initRegistrationForm() {
     // Subdomain availability checking
@@ -124,22 +167,31 @@ function createSubdomainSuggestions(businessName, address) {
         .replace(/\s+/g, '-') // Replace spaces with hyphens
         .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
     
-    // Clean and process address (extract street name)
+    // Clean and process address (extract street name - minimum 2 words)
     let streetName = '';
     if (address) {
         // Extract street name (remove jl./jalan, numbers, etc.)
-        streetName = address
+        let cleanAddress = address
             .toLowerCase()
             .replace(/^(jl\.|jalan|jl)\s*/i, '') // Remove jl./jalan prefix
             .replace(/\s*(no\.|nomor)\s*\d+.*$/i, '') // Remove number and after
             .replace(/[^a-z0-9\s]/g, '') // Remove special characters
-            .replace(/\s+/g, '-') // Replace spaces with hyphens
-            .split('-')[0] // Take first part only
-            .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+            .trim();
+        
+        // Split into words and take minimum 2 words
+        let addressWords = cleanAddress.split(/\s+/).filter(word => word.length > 0);
+        
+        if (addressWords.length >= 2) {
+            // Take minimum 2 words, maximum 3 words
+            streetName = addressWords.slice(0, Math.min(3, addressWords.length)).join('-');
+        } else if (addressWords.length === 1 && addressWords[0].length >= 3) {
+            // If only 1 word but long enough, use it
+            streetName = addressWords[0];
+        }
         
         // Limit street name length
-        if (streetName.length > 15) {
-            streetName = streetName.substring(0, 15);
+        if (streetName.length > 20) {
+            streetName = streetName.substring(0, 20);
         }
     }
     
@@ -228,6 +280,14 @@ function initFormValidation() {
             submitRegistrationForm();
         });
     }
+    // OTP verification form
+    const otpForm = document.getElementById('email-verification-form');
+    if (otpForm) {
+        otpForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            submitOTPVerification();
+        });
+    }
 }
 
 function initStepNavigation() {
@@ -256,20 +316,36 @@ function submitRegistrationForm() {
     
     xhr.onreadystatechange = function() {
         if (xhr.readyState === 4 && xhr.status === 200) {
-            const response = JSON.parse(xhr.responseText);
-            
             // Reset button state
             btnText.style.display = 'inline';
             btnLoading.style.display = 'none';
             submitBtn.disabled = false;
             
-            if (response.success) {
-                // Move to step 3 (email verification)
-                showStep(3);
-            } else {
-                alert('Error: ' + response.data.message);
+            try {
+                const response = JSON.parse(xhr.responseText);
+                
+                if (response.success) {
+                    // Move to step 3 (email verification)
+                    showStep(3);
+                    console.log('Registration successful:', response.data);
+                } else {
+                    alert('Error: ' + response.data.message);
+                }
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                console.error('Server response:', xhr.responseText);
+                alert('Server response error. Check console for details.');
             }
         }
+    };
+    
+    xhr.onerror = function() {
+        // Reset button state
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+        submitBtn.disabled = false;
+        
+        alert('Network error occurred');
     };
     
     xhr.send(formData);
@@ -367,3 +443,182 @@ function testSMTPEmail() {
     addLog('Step 7: AJAX request sent successfully');
 }
 
+function checkSubdomainAvailability(subdomain) {
+    const checkDiv = document.getElementById('subdomain-check');
+    
+    if (subdomain.length < 3) {
+        checkDiv.textContent = 'Minimal 3 karakter';
+        checkDiv.className = 'subdomain-check';
+        return;
+    }
+    
+    // Validate format
+    if (!/^[a-z0-9-]+$/.test(subdomain)) {
+        checkDiv.textContent = 'Hanya huruf kecil, angka, dan tanda hubung (-)';
+        checkDiv.className = 'subdomain-check unavailable';
+        return;
+    }
+    
+    checkDiv.textContent = 'Memeriksa ketersediaan...';
+    checkDiv.className = 'subdomain-check checking';
+    
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', msme_ajax.ajax_url, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4 && xhr.status === 200) {
+            try {
+                const response = JSON.parse(xhr.responseText);
+                
+                if (response.success) {
+                    if (response.data.available) {
+                        checkDiv.textContent = '✓ Tersedia';
+                        checkDiv.className = 'subdomain-check available';
+                    } else {
+                        checkDiv.textContent = '✗ Sudah digunakan';
+                        checkDiv.className = 'subdomain-check unavailable';
+                    }
+                } else {
+                    checkDiv.textContent = 'Error: ' + response.data.message;
+                    checkDiv.className = 'subdomain-check unavailable';
+                }
+            } catch (e) {
+                checkDiv.textContent = 'Error checking availability';
+                checkDiv.className = 'subdomain-check unavailable';
+            }
+        }
+    };
+    
+    xhr.send('action=check_subdomain_availability&subdomain=' + encodeURIComponent(subdomain) + '&nonce=' + msme_ajax.nonce);
+}
+
+function submitOTPVerification() {
+    const otpInput = document.getElementById('otp_code');
+    const submitBtn = document.querySelector('#email-verification-form .btn-submit');
+    const otpCode = otpInput.value.trim();
+    
+    // Validate OTP format
+    if (!/^\d{6}$/.test(otpCode)) {
+        alert('Kode OTP harus berupa 6 angka');
+        otpInput.focus();
+        return;
+    }
+    
+    // Get email from previous form or current user
+    let email = '';
+    const emailField = document.getElementById('owner_email');
+    if (emailField) {
+        email = emailField.value;
+    } else if (typeof msme_ajax !== 'undefined' && msme_ajax.current_user) {
+        email = msme_ajax.current_user.email;
+    }
+    
+    if (!email) {
+        alert('Error: Email tidak ditemukan. Silakan mulai ulang pendaftaran.');
+        return;
+    }
+    
+    // Show loading state
+    const originalText = submitBtn.textContent;
+    submitBtn.textContent = 'Memverifikasi...';
+    submitBtn.disabled = true;
+    otpInput.disabled = true;
+    
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('action', 'verify_otp_code');
+    formData.append('otp_code', otpCode);
+    formData.append('email', email);
+    formData.append('nonce', msme_ajax.nonce);
+    
+    // AJAX submission
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', msme_ajax.ajax_url, true);
+    
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4 && xhr.status === 200) {
+            // Reset button state
+            submitBtn.textContent = originalText;
+            submitBtn.disabled = false;
+            otpInput.disabled = false;
+            
+            try {
+                const response = JSON.parse(xhr.responseText);
+                
+                if (response.success) {
+                    // Show success message
+                    showVerificationSuccess(response.data);
+                } else {
+                    // Show error message
+                    showVerificationError(response.data);
+                }
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                alert('Server response error. Check console for details.');
+            }
+        }
+    };
+    
+    xhr.onerror = function() {
+        // Reset button state
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+        otpInput.disabled = false;
+        
+        alert('Network error occurred');
+    };
+    
+    xhr.send(formData);
+}
+
+function showVerificationSuccess(data) {
+    // Replace Step 3 content with success message
+    const step3 = document.getElementById('form-step-3');
+    step3.innerHTML = `
+        <div style="text-align: center; padding: 40px 20px;">
+            <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 15px; padding: 30px; margin: 20px 0;">
+                <h2 style="color: #155724; margin: 0 0 20px 0;">✅ Verifikasi Berhasil!</h2>
+                <p style="font-size: 18px; color: #155724; margin: 0 0 15px 0;">
+                    <strong>${data.message}</strong>
+                </p>
+                <div style="background: white; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                    <h3 style="color: #0073aa; margin: 0 0 10px 0;">Bisnis Anda:</h3>
+                    <p style="margin: 5px 0;"><strong>Nama:</strong> ${data.business_name}</p>
+                    <p style="margin: 5px 0;"><strong>Website:</strong> ${data.subdomain}.cobalah.id</p>
+                </div>
+                <div style="background: #fff3cd; border-radius: 8px; padding: 15px; margin: 20px 0;">
+                    <h4 style="color: #856404; margin: 0 0 10px 0;">📋 Langkah Selanjutnya:</h4>
+                    <ul style="text-align: left; color: #856404; margin: 0; padding-left: 20px;">
+                        <li>Tim admin akan mengulas pendaftaran Anda</li>
+                        <li>Anda akan menerima email konfirmasi dalam 24 jam</li>
+                        <li>Setelah disetujui, website bisnis Anda akan aktif</li>
+                        <li>Anda dapat mulai mengelola konten bisnis Anda</li>
+                    </ul>
+                </div>
+                <p style="color: #666; font-size: 14px; margin: 20px 0 0 0;">
+                    Terima kasih telah bergabung dengan Cobalah.id!<br>
+                    <strong>Website Gratis untuk UMKM Indonesia</strong>
+                </p>
+            </div>
+        </div>
+    `;
+}
+
+function showVerificationError(data) {
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; padding: 15px; margin: 15px 0; color: #721c24;';
+    errorDiv.innerHTML = `<strong>❌ Error:</strong> ${data.message}`;
+    
+    // Insert error message before the form
+    const form = document.getElementById('email-verification-form');
+    form.parentNode.insertBefore(errorDiv, form);
+    
+    // Remove error after 5 seconds
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+    
+    // Focus back to OTP input
+    document.getElementById('otp_code').focus();
+}
