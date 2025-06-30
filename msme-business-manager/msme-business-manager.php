@@ -97,8 +97,11 @@ class MSME_Business_Manager {
             wp_schedule_event(time(), 'daily', 'msme_daily_cleanup');
         }
         add_action('msme_daily_cleanup', array($this, 'cleanup_expired_registrations'));
-        
         add_action('wp_ajax_manual_cleanup_registrations', array($this, 'manual_cleanup_registrations'));
+        add_action('wp_ajax_resend_otp_code', array($this, 'resend_otp_code'));
+        add_action('wp_ajax_nopriv_resend_otp_code', array($this, 'resend_otp_code'));
+        add_action('wp_ajax_resend_otp_code', array($this, 'resend_otp_code'));
+        add_action('wp_ajax_nopriv_resend_otp_code', array($this, 'resend_otp_code'));
     }
     
     /**
@@ -1322,14 +1325,12 @@ class MSME_Business_Manager {
                             
                             <button type="submit" class="btn-submit">[✓] Verifikasi Email</button>
                             
-                            <div class="resend-otp">
-                                <p style="text-align: center; margin: 20px 0;">
-                                    <strong>Masih belum menerima email?</strong><br>
-                                    <a href="#" id="resend-otp-link" style="color: #0073aa; font-weight: bold;">[EMAIL] Kirim Ulang Kode Verifikasi</a>
-                                </p>
-                                <div id="resend-countdown" style="display: none; text-align: center; color: #666;">
-                                    Kirim ulang dalam <span id="countdown">60</span> detik
-                                </div>
+                            <!-- After your existing verification button, ADD: -->
+                            <div class="resend-section" style="margin-top: 20px; text-align: center; padding-top: 20px; border-top: 1px solid #e0e0e0;">
+                                <p style="color: #666; margin: 10px 0;">Tidak menerima kode?</p>
+                                <button type="button" class="resend-otp-btn" style="background: transparent; color: #0073aa; border: 1px solid #0073aa; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                                    Kirim Ulang Kode Verifikasi
+                                </button>
                             </div>
                             
                             <!-- Help Section -->
@@ -2278,6 +2279,99 @@ class MSME_Business_Manager {
         echo "Removed {$deleted} expired/abandoned registration(s).";
         echo '</div>';
         wp_die();
+    }
+    
+    /**
+     * Resend OTP code to user email
+     */
+    public function resend_otp_code() {
+        // Verify nonce for security
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_registration_nonce')) {
+            wp_send_json_error(array(
+                'message' => 'Keamanan: Permintaan tidak valid. Silakan refresh halaman.'
+            ));
+        }
+        
+        $email = sanitize_email($_POST['email']);
+        
+        if (empty($email)) {
+            wp_send_json_error(array(
+                'message' => 'Email tidak valid.'
+            ));
+        }
+        
+        global $wpdb;
+        
+        // Get registration record
+        $registration = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE email = %s AND status = 'pending'
+             ORDER BY created_date DESC LIMIT 1",
+            $email
+        ));
+        
+        if (!$registration) {
+            wp_send_json_error(array(
+                'message' => 'Registrasi tidak ditemukan atau sudah diproses.'
+            ));
+        }
+        
+        // Rate limiting: Check if last OTP was sent within 1 minute
+        if (!empty($registration->otp_expires)) {
+            $last_otp_time = new DateTime($registration->otp_expires);
+            $last_otp_time->modify('-15 minutes'); // OTP expires 15 min after creation
+            $current_time = new DateTime();
+            $time_diff = $current_time->getTimestamp() - $last_otp_time->getTimestamp();
+            
+            if ($time_diff < 60) { // Less than 1 minute ago
+                $wait_seconds = 60 - $time_diff;
+                wp_send_json_error(array(
+                    'message' => "Tunggu {$wait_seconds} detik sebelum mengirim ulang kode verifikasi.",
+                    'wait_time' => $wait_seconds
+                ));
+            }
+        }
+        
+        // Generate new OTP
+        $new_otp = sprintf('%06d', wp_rand(100000, 999999));
+        $otp_expires = date('Y-m-d H:i:s', strtotime('+15 minutes'));
+        
+        // Update database with new OTP
+        $update_result = $wpdb->update(
+            $wpdb->base_prefix . 'msme_registrations',
+            array(
+                'otp_code' => $new_otp,
+                'otp_expires' => $otp_expires
+            ),
+            array('id' => $registration->id)
+        );
+        
+        if ($update_result === false) {
+            wp_send_json_error(array(
+                'message' => 'Gagal memperbarui kode OTP. Silakan coba lagi.'
+            ));
+        }
+        
+        // Send email with new OTP
+        // CORRECT ORDER:
+        $email_sent = $this->send_otp_email(
+            $email, 
+            $registration->owner_name, 
+            $new_otp, 
+            $registration->business_name
+        );
+        
+        if (!$email_sent) {
+            wp_send_json_error(array(
+                'message' => 'Gagal mengirim email. Silakan coba lagi.'
+            ));
+        }
+        
+        // Success
+        wp_send_json_success(array(
+            'message' => 'Kode OTP baru telah dikirim ke email Anda. Periksa kotak masuk dan folder spam.',
+            'sent' => true
+        ));
     }
     
 }
