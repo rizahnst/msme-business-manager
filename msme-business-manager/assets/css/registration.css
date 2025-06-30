@@ -552,3 +552,78 @@ h1 {
         letter-spacing: 3px !important;
     }
 }
+
+/* ====== RESEND OTP BUTTON STYLES ====== */
+
+.resend-section {
+    margin-top: 20px;
+    text-align: center;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 20px;
+}
+
+.resend-section p {
+    color: #666;
+    margin: 10px 0;
+    font-size: 14px;
+}
+
+.resend-otp-btn {
+    background: transparent;
+    color: #0073aa;
+    border: 1px solid #0073aa;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    min-width: 180px;
+}
+
+.resend-otp-btn:hover:not(:disabled) {
+    background: #0073aa;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,115,170,0.2);
+}
+
+.resend-otp-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: #f8f9fa;
+    color: #6c757d;
+    border-color: #dee2e6;
+}
+
+.resend-otp-btn:disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+/* Loading state for resend button */
+.resend-otp-btn.loading {
+    background: #f8f9fa;
+    color: #0073aa;
+    cursor: wait;
+}
+
+/* Countdown animation */
+.resend-countdown {
+    font-family: monospace;
+    font-weight: bold;
+    color: #dc3545;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .resend-section {
+        padding: 15px;
+    }
+    
+    .resend-otp-btn {
+        width: 100%;
+        padding: 12px 20px;
+        font-size: 16px;
+    }
+}
