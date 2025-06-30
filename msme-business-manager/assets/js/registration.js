@@ -578,28 +578,30 @@ function showVerificationSuccess(data) {
     step3.innerHTML = `
         <div style="text-align: center; padding: 40px 20px;">
             <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 15px; padding: 30px; margin: 20px 0;">
-                <h2 style="color: #155724; margin: 0 0 20px 0;">✅ Verifikasi Berhasil!</h2>
+                <h2 style="color: #155724; margin: 0 0 20px 0;">[CHECK] Verifikasi Berhasil!</h2>
                 <p style="font-size: 18px; color: #155724; margin: 0 0 15px 0;">
-                    <strong>${data.message}</strong>
+                    <strong>Verifikasi email berhasil! Pendaftaran Anda akan diproses oleh admin dalam 24 jam.</strong>
                 </p>
-                <div style="background: white; border-radius: 10px; padding: 20px; margin: 20px 0;">
-                    <h3 style="color: #0073aa; margin: 0 0 10px 0;">Bisnis Anda:</h3>
-                    <p style="margin: 5px 0;"><strong>Nama:</strong> ${data.business_name}</p>
-                    <p style="margin: 5px 0;"><strong>Website:</strong> ${data.subdomain}.cobalah.id</p>
+                <div style="background: white; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                    <h3 style="color: #0073aa; margin: 0 0 15px 0;">Bisnis Anda:</h3>
+                    <p><strong>Nama:</strong> ${data.business_name || 'N/A'}</p>
+                    <p><strong>Website:</strong> ${data.subdomain || 'N/A'}.cobalah.id</p>
                 </div>
-                <div style="background: #fff3cd; border-radius: 8px; padding: 15px; margin: 20px 0;">
-                    <h4 style="color: #856404; margin: 0 0 10px 0;">📋 Langkah Selanjutnya:</h4>
-                    <ul style="text-align: left; color: #856404; margin: 0; padding-left: 20px;">
+                <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                    <h4 style="color: #856404; margin: 0 0 15px 0;">[LIST] Langkah Selanjutnya:</h4>
+                    <ul style="text-align: left; color: #856404;">
                         <li>Tim admin akan mengulas pendaftaran Anda</li>
                         <li>Anda akan menerima email konfirmasi dalam 24 jam</li>
                         <li>Setelah disetujui, website bisnis Anda akan aktif</li>
                         <li>Anda dapat mulai mengelola konten bisnis Anda</li>
                     </ul>
                 </div>
-                <p style="color: #666; font-size: 14px; margin: 20px 0 0 0;">
-                    Terima kasih telah bergabung dengan Cobalah.id!<br>
-                    <strong>Website Gratis untuk UMKM Indonesia</strong>
-                </p>
+                <div style="margin-top: 30px;">
+                    <p style="color: #666; font-size: 14px;">
+                        Terima kasih telah bergabung dengan Cobalah.id<br>
+                        <strong>Website Gratis untuk UMKM Indonesia</strong>
+                    </p>
+                </div>
             </div>
         </div>
     `;
@@ -622,3 +624,207 @@ function showVerificationError(data) {
     // Focus back to OTP input
     document.getElementById('otp_code').focus();
 }
+
+// Handle OTP resend functionality
+function resendOTPCode() {
+    const email = document.getElementById('verification-email').value;
+    const resendBtn = document.querySelector('.resend-otp-btn');
+    
+    if (!email) {
+        showMessage('Email tidak ditemukan. Silakan daftar ulang.', 'error');
+        return;
+    }
+    
+    // Show loading state
+    const originalText = resendBtn.textContent;
+    resendBtn.textContent = 'Mengirim...';
+    resendBtn.disabled = true;
+    
+    // Send AJAX request
+    fetch(msme_ajax.ajaxurl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+            action: 'resend_otp_code',
+            email: email,
+            nonce: msme_ajax.nonce
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            showMessage(data.data.message, 'success');
+            
+            // Disable button for 60 seconds with countdown
+            startResendCountdown(resendBtn);
+            
+        } else {
+            // Show error message
+            showMessage(data.data.message, 'error');
+            
+            // If rate limited, start countdown
+            if (data.data.wait_time) {
+                startResendCountdown(resendBtn, data.data.wait_time);
+            } else {
+                // Reset button
+                resendBtn.textContent = originalText;
+                resendBtn.disabled = false;
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showMessage('Terjadi kesalahan sistem. Silakan coba lagi.', 'error');
+        
+        // Reset button
+        resendBtn.textContent = originalText;
+        resendBtn.disabled = false;
+    });
+}
+
+// Countdown timer for resend button
+function startResendCountdown(button, initialSeconds = 60) {
+    let seconds = initialSeconds;
+    
+    const updateButton = () => {
+        if (seconds > 0) {
+            button.textContent = `Tunggu ${seconds}s`;
+            button.disabled = true;
+            seconds--;
+            setTimeout(updateButton, 1000);
+        } else {
+            button.textContent = 'Kirim Ulang Kode Verifikasi';
+            button.disabled = false;
+        }
+    };
+    
+    updateButton();
+}
+
+// Add event listener for resend button
+document.addEventListener('DOMContentLoaded', function() {
+    const resendBtn = document.querySelector('.resend-otp-btn');
+    if (resendBtn) {
+        resendBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            resendOTPCode();
+        });
+    }
+});
+
+// ====== RESEND OTP FUNCTIONALITY ======
+
+// Handle OTP resend functionality
+function resendOTPCode() {
+    const email = document.getElementById('verification-email')?.value || 
+                  document.getElementById('owner_email')?.value;
+    const resendBtn = document.querySelector('.resend-otp-btn');
+    
+    if (!email) {
+        alert('Email tidak ditemukan. Silakan daftar ulang.');
+        return;
+    }
+    
+    // Show loading state
+    const originalText = resendBtn.textContent;
+    resendBtn.textContent = 'Mengirim...';
+    resendBtn.disabled = true;
+    resendBtn.classList.add('loading');
+    
+    // Prepare form data
+    const formData = new FormData();
+    formData.append('action', 'resend_otp_code');
+    formData.append('email', email);
+    formData.append('nonce', msme_ajax.nonce);
+    
+    // Send AJAX request
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', msme_ajax.ajax_url, true);
+    
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4 && xhr.status === 200) {
+            try {
+                const response = JSON.parse(xhr.responseText);
+                
+                if (response.success) {
+                    // Show success message
+                    alert(response.data.message);
+                    
+                    // Start countdown (60 seconds)
+                    startResendCountdown(resendBtn);
+                    
+                } else {
+                    // Show error message
+                    alert(response.data.message);
+                    
+                    // If rate limited, start countdown
+                    if (response.data.wait_time) {
+                        startResendCountdown(resendBtn, response.data.wait_time);
+                    } else {
+                        // Reset button
+                        resendBtn.textContent = originalText;
+                        resendBtn.disabled = false;
+                        resendBtn.classList.remove('loading');
+                    }
+                }
+            } catch (e) {
+                console.error('JSON parse error:', e);
+                alert('Terjadi kesalahan sistem. Silakan coba lagi.');
+                
+                // Reset button
+                resendBtn.textContent = originalText;
+                resendBtn.disabled = false;
+                resendBtn.classList.remove('loading');
+            }
+        }
+    };
+    
+    xhr.onerror = function() {
+        alert('Network error occurred');
+        
+        // Reset button
+        resendBtn.textContent = originalText;
+        resendBtn.disabled = false;
+        resendBtn.classList.remove('loading');
+    };
+    
+    xhr.send(formData);
+}
+
+// Countdown timer for resend button
+function startResendCountdown(button, initialSeconds = 60) {
+    let seconds = initialSeconds;
+    button.classList.remove('loading');
+    
+    const updateButton = () => {
+        if (seconds > 0) {
+            button.textContent = `Tunggu ${seconds}s`;
+            button.disabled = true;
+            button.classList.add('resend-countdown');
+            seconds--;
+            setTimeout(updateButton, 1000);
+        } else {
+            button.textContent = 'Kirim Ulang Kode Verifikasi';
+            button.disabled = false;
+            button.classList.remove('resend-countdown');
+        }
+    };
+    
+    updateButton();
+}
+
+// Add event listener when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    const resendBtn = document.querySelector('.resend-otp-btn');
+    if (resendBtn) {
+        resendBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            console.log('Resend button clicked!'); // Debug log
+            resendOTPCode();
+        });
+    }
+});
+
