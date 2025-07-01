@@ -758,6 +758,15 @@ class MSME_Business_Manager {
             array($this, 'database_status_page')
         );
         
+        add_submenu_page(
+            'msme-business-manager',
+            'Manajemen Pendaftaran',
+            'Pendaftaran',
+            'manage_network',
+            'msme-registrations',
+            array($this, 'registration_management_page')  // Following YOUR naming convention
+        );
+        
         $this->add_smtp_config_page();
     }
     
@@ -2372,6 +2381,205 @@ class MSME_Business_Manager {
             'message' => 'Kode OTP baru telah dikirim ke email Anda. Periksa kotak masuk dan folder spam.',
             'sent' => true
         ));
+    }
+    
+    /**
+     * Registration Management Page (FIXED for actual database structure)
+     */
+    public function registration_management_page() {
+        // Security check
+        if (!current_user_can('manage_network')) {
+            wp_die(__('Anda tidak memiliki izin untuk mengakses halaman ini.'));
+        }
+        
+        global $wpdb;
+        
+        // Get current page for pagination
+        $paged = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+        $per_page = 20;
+        $offset = ($paged - 1) * $per_page;
+        
+        // Get filter parameters
+        $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'pending';
+        
+        // FIXED: Handle empty status as 'pending'
+        $where_clause = "WHERE 1=1";
+        if ($status_filter === 'pending') {
+            $where_clause .= " AND (status = '' OR status = 'pending' OR status = 'verified')";
+        } elseif ($status_filter !== 'all') {
+            $where_clause .= $wpdb->prepare(" AND status = %s", $status_filter);
+        }
+        
+        // Get registrations with correct column names
+        $registrations_query = "
+            SELECT * FROM {$wpdb->base_prefix}msme_registrations 
+            $where_clause 
+            ORDER BY created_date DESC 
+            LIMIT $per_page OFFSET $offset
+        ";
+        $registrations = $wpdb->get_results($registrations_query);
+        
+        // Get total count for pagination
+        $total_query = "SELECT COUNT(*) FROM {$wpdb->base_prefix}msme_registrations $where_clause";
+        $total_items = $wpdb->get_var($total_query);
+        
+        // Calculate pagination
+        $total_pages = ceil($total_items / $per_page);
+        
+        // FIXED: Get statistics with empty status treated as pending
+        $stats = $wpdb->get_row("
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN (status = '' OR status = 'pending' OR status = 'verified') THEN 1 ELSE 0 END) as pending,
+                SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+            FROM {$wpdb->base_prefix}msme_registrations
+        ");
+        
+        ?>
+        <div class="wrap">
+            <h1>Manajemen Pendaftaran Bisnis</h1>
+            
+            <!-- Filter Bar -->
+            <div class="tablenav top">
+                <form method="get" style="display: inline-block;">
+                    <input type="hidden" name="page" value="msme-registrations" />
+                    <select name="status" onchange="this.form.submit()">
+                        <option value="all" <?php selected($status_filter, 'all'); ?>>Semua Status</option>
+                        <option value="pending" <?php selected($status_filter, 'pending'); ?>>Menunggu Persetujuan</option>
+                        <option value="approved" <?php selected($status_filter, 'approved'); ?>>Disetujui</option>
+                        <option value="rejected" <?php selected($status_filter, 'rejected'); ?>>Ditolak</option>
+                    </select>
+                    <input type="submit" class="button" value="Filter" />
+                </form>
+                
+                <!-- Statistics -->
+                <div style="float: right;">
+                    <strong>Statistik:</strong> 
+                    Total: <?php echo $stats->total; ?> | 
+                    Pending: <span style="color: orange;"><?php echo $stats->pending; ?></span> | 
+                    Disetujui: <span style="color: green;"><?php echo $stats->approved; ?></span> | 
+                    Ditolak: <span style="color: red;"><?php echo $stats->rejected; ?></span>
+                </div>
+                <div class="clear"></div>
+            </div>
+            
+            <!-- Registrations Table -->
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th scope="col" style="width: 50px;">
+                            <input type="checkbox" id="select-all-registrations" />
+                        </th>
+                        <th scope="col">Bisnis</th>
+                        <th scope="col">Email</th>
+                        <th scope="col">Kontak</th>
+                        <th scope="col">Subdomain</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Tanggal</th>
+                        <th scope="col">Aksi</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (empty($registrations)): ?>
+                        <tr>
+                            <td colspan="8" style="text-align: center; padding: 20px;">
+                                <em>Tidak ada pendaftaran ditemukan untuk status: <?php echo esc_html($status_filter); ?></em>
+                            </td>
+                        </tr>
+                    <?php else: ?>
+                        <?php foreach ($registrations as $registration): ?>
+                            <tr data-registration-id="<?php echo $registration->id; ?>">
+                                <td>
+                                    <input type="checkbox" name="registration_ids[]" value="<?php echo $registration->id; ?>" />
+                                </td>
+                                <td>
+                                    <strong><?php echo esc_html($registration->business_name); ?></strong><br>
+                                    <small><?php echo esc_html($registration->business_category); ?></small>
+                                </td>
+                                <td>
+                                    <?php echo esc_html($registration->email); ?>
+                                </td>
+                                <td>
+                                    <?php echo esc_html($registration->phone_number ?? 'N/A'); ?><br>
+                                    <small><?php echo esc_html($registration->business_address ?? 'N/A'); ?></small>
+                                </td>
+                                <td>
+                                    <code><?php echo esc_html($registration->subdomain); ?>.cobalah.id</code>
+                                </td>
+                                <td>
+                                    <?php
+                                    // FIXED: Handle empty status
+                                    $display_status = $registration->status;
+                                    if (empty($display_status)) {
+                                        $display_status = 'pending';
+                                    }
+                                    
+                                    $status_colors = [
+                                        'pending' => 'orange',
+                                        'verified' => 'orange',
+                                        'approved' => 'green',
+                                        'rejected' => 'red'
+                                    ];
+                                    $status_labels = [
+                                        'pending' => 'Menunggu',
+                                        'verified' => 'Menunggu',
+                                        'approved' => 'Disetujui',
+                                        'rejected' => 'Ditolak'
+                                    ];
+                                    $color = $status_colors[$display_status] ?? 'gray';
+                                    $label = $status_labels[$display_status] ?? $display_status;
+                                    ?>
+                                    <span style="color: <?php echo $color; ?>; font-weight: bold;">
+                                        <?php echo $label; ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php echo date('d/m/Y H:i', strtotime($registration->created_date)); ?>
+                                </td>
+                                <td>
+                                    <?php if (empty($registration->status) || $registration->status === 'pending' || $registration->status === 'verified'): ?>
+                                        <button type="button" class="button button-primary" 
+                                                onclick="approveRegistration(<?php echo $registration->id; ?>)">
+                                            Setujui
+                                        </button>
+                                        <button type="button" class="button" 
+                                                onclick="rejectRegistration(<?php echo $registration->id; ?>)">
+                                            Tolak
+                                        </button>
+                                    <?php else: ?>
+                                        <button type="button" class="button" 
+                                                onclick="viewRegistrationDetails(<?php echo $registration->id; ?>)">
+                                            Lihat Detail
+                                        </button>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+            
+            <!-- Bulk Actions -->
+            <div style="margin-top: 20px;">
+                <select id="bulk-action">
+                    <option value="">Pilih Aksi Massal</option>
+                    <option value="approve">Setujui Terpilih</option>
+                    <option value="reject">Tolak Terpilih</option>
+                </select>
+                <button type="button" class="button" onclick="executeBulkAction()">Jalankan</button>
+            </div>
+        </div>
+        
+        <style>
+        .wrap table th, .wrap table td {
+            padding: 8px 12px;
+        }
+        .wp-list-table tbody tr:hover {
+            background-color: #f6f7f7;
+        }
+        </style>
+        <?php
     }
     
 }
