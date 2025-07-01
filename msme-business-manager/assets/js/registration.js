@@ -828,3 +828,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Admin Registration Management Functions
+function approveRegistration(id) {
+    if (confirm('Setujui pendaftaran ini?')) {
+        console.log('Approve registration:', id);
+        // TODO: Implement approval AJAX call
+    }
+}
+
+function rejectRegistration(id) {
+    if (confirm('Tolak pendaftaran ini?')) {
+        console.log('Reject registration:', id);
+        // TODO: Implement rejection AJAX call
+    }
+}
+
