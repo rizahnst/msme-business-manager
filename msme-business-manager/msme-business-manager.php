@@ -724,6 +724,13 @@ class MSME_Business_Manager {
         
         // Add admin notices
         add_action('network_admin_notices', array($this, 'activation_notice'));
+        
+        add_action('wp_ajax_resend_otp_code', array($this, 'resend_otp_code'));
+        add_action('wp_ajax_nopriv_resend_otp_code', array($this, 'resend_otp_code'));
+        add_action('wp_ajax_resend_otp_code', array($this, 'resend_otp_code'));
+        add_action('wp_ajax_nopriv_resend_otp_code', array($this, 'resend_otp_code'));
+        
+        $this->init_admin_ajax_handlers();
     }
     
     /**
@@ -1384,6 +1391,18 @@ class MSME_Business_Manager {
             'nonce' => wp_create_nonce('msme_admin_nonce')
         ));
         
+        // Make sure ajaxurl and nonce are available globally
+        echo '<script>
+            var ajaxurl = "' . admin_url('admin-ajax.php') . '";
+            var msme_ajax_nonce = "' . wp_create_nonce('msme_admin_nonce') . '";
+        </script>';
+        
+        // Also add global ajaxurl and nonce for registration.js
+        echo '<script>
+            var ajaxurl = "' . admin_url('admin-ajax.php') . '";
+            var msme_ajax_nonce = "' . wp_create_nonce('msme_admin_nonce') . '";
+        </script>';
+        
         echo '<script>console.log("MSME admin JS loaded on: ' . $hook . '");</script>';
     }
     
@@ -1935,6 +1954,31 @@ class MSME_Business_Manager {
             return;
         }
         
+        // Check for Google account ban
+        $google_id = $this->get_current_google_id();
+        $ban_check = $this->check_google_account_ban($google_id);
+        
+        if ($ban_check['is_banned']) {
+            wp_send_json_error(array(
+                'message' => 'Akun Google Anda dibatasi selama 24 jam karena 3 kali penolakan. Coba lagi ' . $ban_check['remaining_hours'] . ' jam lagi.',
+                'type' => 'banned',
+                'ban_until' => $ban_check['ban_until']
+            ));
+            return;
+        }
+        
+        // Check for cooldown period
+        $cooldown_check = $this->check_rejection_cooldown($owner_email);
+        if ($cooldown_check['in_cooldown']) {
+            wp_send_json_error(array(
+                'message' => 'Anda dapat mendaftar lagi dalam ' . ceil($cooldown_check['remaining_seconds'] / 60) . ' menit setelah penolakan terakhir.',
+                'type' => 'cooldown',
+                'remaining_seconds' => $cooldown_check['remaining_seconds'],
+                'retry_count' => $cooldown_check['retry_count']
+            ));
+            return;
+        }
+        
         // Clean up any expired/abandoned registrations first
         $this->prepare_clean_registration($owner_email, $subdomain);
         
@@ -2186,12 +2230,28 @@ class MSME_Business_Manager {
         $current_time = current_time('mysql');
         
         if ($email) {
-            // Clean up specific email's abandoned registrations
-            $deleted = $wpdb->delete(
+            // Archive rejected registration data before cleanup
+            $rejected_registration = $wpdb->get_row($wpdb->prepare(
+                "SELECT retry_count, last_rejected_date FROM {$wpdb->base_prefix}msme_registrations 
+                 WHERE email = %s AND status = 'rejected' ORDER BY last_rejected_date DESC LIMIT 1",
+                $owner_email
+            ));
+            
+            // Clean up rejected entries but preserve Google ID for tracking
+            $wpdb->delete(
                 $wpdb->base_prefix . 'msme_registrations',
                 array(
-                    'email' => $email,
-                    'status' => 'pending'
+                    'email' => $owner_email,
+                    'status' => 'rejected'
+                ),
+                array('%s', '%s')
+            );
+            
+            $wpdb->delete(
+                $wpdb->base_prefix . 'msme_registrations',
+                array(
+                    'subdomain' => $subdomain,
+                    'status' => 'rejected'
                 ),
                 array('%s', '%s')
             );
@@ -2580,6 +2640,617 @@ class MSME_Business_Manager {
         }
         </style>
         <?php
+    }
+    
+    /**
+     * Initialize admin AJAX handlers for Phase 2.3
+     */
+    public function init_admin_ajax_handlers() {
+        // Add AJAX handlers for admin approval/rejection
+        add_action('wp_ajax_msme_approve_registration', array($this, 'handle_approve_registration'));
+        add_action('wp_ajax_msme_reject_registration', array($this, 'handle_reject_registration'));
+        add_action('wp_ajax_msme_get_registration_stats', array($this, 'get_registration_stats'));
+    }
+    
+    /**
+     * Handle registration approval via AJAX
+     */
+    public function handle_approve_registration() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_admin_nonce')) {
+            wp_send_json_error('Invalid security token');
+            return;
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_network')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        // Get registration ID
+        $registration_id = intval($_POST['registration_id']);
+        if (!$registration_id) {
+            wp_send_json_error('Invalid registration ID');
+            return;
+        }
+        
+        global $wpdb;
+        
+        // Get registration details
+        $registration = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->base_prefix}msme_registrations WHERE id = %d AND (status = 'pending' OR status = 'verified' OR status IS NULL OR status = '')",
+            $registration_id
+        ));
+        
+        if (!$registration) {
+            wp_send_json_error('Registration not found or already processed');
+            return;
+        }
+        
+        // Start transaction
+        $wpdb->query('START TRANSACTION');
+        
+        try {
+            // Update registration status
+            $updated = $wpdb->update(
+                $wpdb->base_prefix . 'msme_registrations',
+                array(
+                    'status' => 'approved',
+                    'approved_date' => current_time('mysql'),
+                    'admin_notes' => 'Approved by admin: ' . wp_get_current_user()->display_name
+                ),
+                array('id' => $registration_id),
+                array('%s', '%s', '%s'),
+                array('%d')
+            );
+            
+            if ($updated === false) {
+                throw new Exception('Failed to update registration status');
+            }
+            
+            // Log admin activity
+            $this->log_admin_activity('approve', $registration_id, get_current_user_id());
+            
+            // Send approval email to business owner
+            $email_sent = $this->send_approval_email($registration);
+            
+            // Commit transaction
+            $wpdb->query('COMMIT');
+            
+            // Prepare response data
+            $response_data = array(
+                'message' => 'Registration approved successfully',
+                'email_sent' => $email_sent,
+                'registration_id' => $registration_id,
+                'business_name' => $registration->business_name,
+                'subdomain' => $registration->subdomain
+            );
+            
+            wp_send_json_success($response_data);
+            
+        } catch (Exception $e) {
+            // Rollback transaction
+            $wpdb->query('ROLLBACK');
+            
+            error_log('MSME Admin Approval Error: ' . $e->getMessage());
+            wp_send_json_error('Approval failed: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Handle registration rejection via AJAX
+     */
+    public function handle_reject_registration() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_admin_nonce')) {
+            wp_send_json_error('Invalid security token');
+            return;
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_network')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        // Get registration ID and reason
+        $registration_id = intval($_POST['registration_id']);
+        $reason = sanitize_textarea_field($_POST['reason']);
+        
+        if (!$registration_id) {
+            wp_send_json_error('Invalid registration ID');
+            return;
+        }
+        
+        global $wpdb;
+        
+        // Get registration details
+        $registration = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$wpdb->base_prefix}msme_registrations WHERE id = %d AND (status = 'pending' OR status = 'verified' OR status IS NULL OR status = '')",
+            $registration_id
+        ));
+        
+        if (!$registration) {
+            wp_send_json_error('Registration not found or already processed');
+            return;
+        }
+        
+        // Start transaction
+        $wpdb->query('START TRANSACTION');
+        
+        try {
+            // Prepare admin notes
+            $admin_notes = 'Rejected by admin: ' . wp_get_current_user()->display_name;
+            if (!empty($reason)) {
+                $admin_notes .= "\nReason: " . $reason;
+            }
+            
+            // Get current retry count
+            $current_retry_count = intval($registration->retry_count) + 1;
+            $google_id = $registration->google_id;
+            
+            // Determine if this should trigger a ban (3rd rejection)
+            $ban_until = null;
+            $google_account_ban = null;
+            if ($current_retry_count >= 3) {
+                $ban_until = date('Y-m-d H:i:s', current_time('timestamp') + (24 * 60 * 60)); // 24 hours
+                $google_account_ban = $google_id;
+            }
+            
+            // Update registration status with retry tracking
+            $updated = $wpdb->update(
+                $wpdb->base_prefix . 'msme_registrations',
+                array(
+                    'status' => 'rejected',
+                    'approved_date' => current_time('mysql'),
+                    'admin_notes' => $admin_notes,
+                    'retry_count' => $current_retry_count,
+                    'last_rejected_date' => current_time('mysql'),
+                    'ban_until' => $ban_until,
+                    'google_account_ban' => $google_account_ban
+                ),
+                array('id' => $registration_id),
+                array('%s', '%s', '%s', '%d', '%s', '%s', '%s'),
+                array('%d')
+            );
+            
+            if ($updated === false) {
+                throw new Exception('Failed to update registration status');
+            }
+            
+            // Log admin activity
+            $this->log_admin_activity('reject', $registration_id, get_current_user_id(), $reason);
+            
+            // Send enhanced rejection email with retry information
+            $email_sent = $this->send_rejection_email_with_retry_info($registration, $current_retry_count, $reason, $ban_until);
+            
+            // Commit transaction
+            $wpdb->query('COMMIT');
+            
+            // Prepare response data
+            $response_data = array(
+                'message' => 'Registration rejected successfully',
+                'email_sent' => $email_sent,
+                'registration_id' => $registration_id,
+                'business_name' => $registration->business_name,
+                'reason' => $reason
+            );
+            
+            wp_send_json_success($response_data);
+            
+        } catch (Exception $e) {
+            // Rollback transaction
+            $wpdb->query('ROLLBACK');
+            
+            error_log('MSME Admin Rejection Error: ' . $e->getMessage());
+            wp_send_json_error('Rejection failed: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Get registration statistics for dashboard update
+     */
+    public function get_registration_stats() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_admin_nonce')) {
+            wp_send_json_error('Invalid security token');
+            return;
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_network')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        global $wpdb;
+        
+        try {
+            // Get statistics
+            $stats = $wpdb->get_row("
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) as approved,
+                    SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected
+                FROM {$wpdb->base_prefix}msme_registrations
+                WHERE status IN ('pending', 'approved', 'rejected')
+            ");
+            
+            if (!$stats) {
+                throw new Exception('Failed to retrieve statistics');
+            }
+            
+            wp_send_json_success(array(
+                'total' => intval($stats->total),
+                'pending' => intval($stats->pending),
+                'approved' => intval($stats->approved),
+                'rejected' => intval($stats->rejected)
+            ));
+            
+        } catch (Exception $e) {
+            error_log('MSME Stats Error: ' . $e->getMessage());
+            wp_send_json_error('Failed to retrieve statistics');
+        }
+    }
+    
+    /**
+     * Send approval email to business owner
+     */
+    private function send_approval_email($registration) {
+        try {
+            $to = $registration->email;
+            $subject = '[Cobalah.id] Pendaftaran Bisnis Anda Disetujui! 🎉';
+            
+            $message = $this->get_approval_email_template($registration);
+            
+            $headers = array(
+                'Content-Type: text/html; charset=UTF-8',
+                'From: Cobalah.id - Website Gratis untuk UMKM Indonesia <tidak-dibalas@cobalah.id>',
+                'Reply-To: bantuan@cobalah.id'
+            );
+            
+            return wp_mail($to, $subject, $message, $headers);
+            
+        } catch (Exception $e) {
+            error_log('MSME Approval Email Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Send rejection email to business owner
+     */
+    private function send_rejection_email($registration, $reason = '') {
+        try {
+            $to = $registration->email;
+            $subject = '[Cobalah.id] Update Pendaftaran Bisnis Anda';
+            
+            $message = $this->get_rejection_email_template($registration, $reason);
+            
+            $headers = array(
+                'Content-Type: text/html; charset=UTF-8',
+                'From: Cobalah.id - Website Gratis untuk UMKM Indonesia <tidak-dibalas@cobalah.id>',
+                'Reply-To: bantuan@cobalah.id'
+            );
+            
+            return wp_mail($to, $subject, $message, $headers);
+            
+        } catch (Exception $e) {
+            error_log('MSME Rejection Email Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Log admin activity for audit trail
+     */
+    private function log_admin_activity($action, $registration_id, $admin_user_id, $notes = '') {
+        global $wpdb;
+        
+        try {
+            // For now, log to wp_msme_notifications table as audit trail
+            // We can create a dedicated audit table later if needed
+            $wpdb->insert(
+                $wpdb->base_prefix . 'msme_notifications',
+                array(
+                    'site_id' => 1, // Main site
+                    'type' => 'admin_action',
+                    'recipient' => 'system',
+                    'subject' => "Admin {$action} registration #{$registration_id}",
+                    'content' => "User ID {$admin_user_id} performed {$action} on registration {$registration_id}. Notes: {$notes}",
+                    'status' => 'completed',
+                    'created_date' => current_time('mysql')
+                ),
+                array('%d', '%s', '%s', '%s', '%s', '%s', '%s')
+            );
+            
+            return true;
+            
+        } catch (Exception $e) {
+            error_log('MSME Activity Log Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Get approval email template
+     */
+    private function get_approval_email_template($registration) {
+        $business_url = 'https://' . $registration->subdomain . '.cobalah.id';
+        
+        return '
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Pendaftaran Disetujui</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: #0073aa; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0;">🎉 Selamat! Pendaftaran Disetujui</h1>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;">
+                    <p>Halo <strong>' . esc_html($registration->business_name) . '</strong>,</p>
+                    
+                    <p>Kabar baik! Pendaftaran bisnis Anda di Cobalah.id telah <strong>disetujui</strong> dan website bisnis Anda sudah siap digunakan.</p>
+                    
+                    <div style="background: white; padding: 20px; border-radius: 5px; border-left: 4px solid #46b450; margin: 20px 0;">
+                        <h3 style="margin-top: 0; color: #46b450;">&#x1F4C4; Detail Website Bisnis:</h3>
+                        <ul style="list-style: none; padding: 0;">
+                            <li><strong>Nama Bisnis:</strong> ' . esc_html($registration->business_name) . '</li>
+                            <li><strong>URL Website:</strong> <a href="' . $business_url . '" style="color: #0073aa;">' . $business_url . '</a></li>
+                            <li><strong>Kategori:</strong> ' . esc_html($registration->business_category) . '</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="' . $business_url . '" style="background: #46b450; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                            &#x1F680; Lihat Website Bisnis Saya
+                        </a>
+                    </div>
+                    
+                    <div style="background: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeaa7; margin: 20px 0;">
+                        <h4 style="margin-top: 0;">&#x1F4DD; Langkah Selanjutnya:</h4>
+                        <ol>
+                            <li>Klik tombol di atas untuk mengakses website bisnis Anda</li>
+                            <li>Login menggunakan akun Google yang sama saat pendaftaran</li>
+                            <li>Lengkapi profil bisnis dan unggah foto produk</li>
+                            <li>Bagikan URL website Anda ke pelanggan</li>
+                        </ol>
+                    </div>
+                    
+                    <p>Jika ada pertanyaan atau butuh bantuan, silakan hubungi kami di <a href="mailto:bantuan@cobalah.id">bantuan@cobalah.id</a></p>
+                    
+                    <p>Terima kasih telah bergabung dengan Cobalah.id!</p>
+                    
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                    <p style="font-size: 12px; color: #666; text-align: center;">
+                        Email ini dikirim otomatis oleh sistem Cobalah.id<br>
+                        Jika Anda tidak mendaftar bisnis di Cobalah.id, abaikan email ini.
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>';
+    }
+    
+    /**
+     * Get rejection email template
+     */
+    private function get_rejection_email_template($registration, $reason = '') {
+        $reason_section = '';
+        if (!empty($reason)) {
+            $reason_section = '
+                <div style="background: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeaa7; margin: 20px 0;">
+                    <h4 style="margin-top: 0;">&#x1F4DD; Alasan:</h4>
+                    <p>' . esc_html($reason) . '</p>
+                </div>';
+        }
+        
+        return '
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Update Pendaftaran Bisnis</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: #dc3232; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                    <h1 style="margin: 0;">&#x1F4E9; Update Pendaftaran Bisnis</h1>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 30px; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;">
+                    <p>Halo <strong>' . esc_html($registration->business_name) . '</strong>,</p>
+                    
+                    <p>Terima kasih atas minat Anda untuk bergabung dengan Cobalah.id. Setelah meninjau pendaftaran bisnis Anda, kami tidak dapat menyetujui pendaftaran ini saat ini.</p>
+                    
+                    ' . $reason_section . '
+                    
+                    <div style="background: #e1f5fe; padding: 15px; border-radius: 5px; border: 1px solid #81d4fa; margin: 20px 0;">
+                        <h4 style="margin-top: 0;">&#x1F504; Apa yang Bisa Dilakukan:</h4>
+                        <ul>
+                            <li>Periksa kembali informasi bisnis yang Anda berikan</li>
+                            <li>Pastikan bisnis Anda sesuai dengan ketentuan platform</li>
+                            <li>Anda dapat mendaftar ulang dengan informasi yang lebih lengkap</li>
+                        </ul>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="https://cobalah.id/daftar-bisnis" style="background: #0073aa; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                            &#x1F504; Daftar Ulang
+                        </a>
+                    </div>
+                    
+                    <p>Jika ada pertanyaan atau butuh klarifikasi lebih lanjut, jangan ragu untuk menghubungi kami di <a href="mailto:bantuan@cobalah.id">bantuan@cobalah.id</a></p>
+                    
+                    <p>Terima kasih atas pengertian Anda.</p>
+                    
+                    <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                    <p style="font-size: 12px; color: #666; text-align: center;">
+                        Email ini dikirim otomatis oleh sistem Cobalah.id<br>
+                        Jika Anda tidak mendaftar bisnis di Cobalah.id, abaikan email ini.
+                    </p>
+                </div>
+            </div>
+        </body>
+        </html>';
+    }
+    
+    /**
+     * Check if Google account is currently banned
+     */
+    private function check_google_account_ban($google_id) {
+        global $wpdb;
+        
+        if (empty($google_id)) {
+            return array('is_banned' => false);
+        }
+        
+        $ban_record = $wpdb->get_row($wpdb->prepare(
+            "SELECT ban_until FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE google_account_ban = %s AND ban_until > NOW() 
+             ORDER BY ban_until DESC LIMIT 1",
+            $google_id
+        ));
+        
+        if ($ban_record) {
+            return array(
+                'is_banned' => true,
+                'ban_until' => $ban_record->ban_until,
+                'remaining_hours' => ceil((strtotime($ban_record->ban_until) - time()) / 3600)
+            );
+        }
+        
+        return array('is_banned' => false);
+    }
+    
+    /**
+     * Check if email is in cooldown period after rejection
+     */
+    private function check_rejection_cooldown($email) {
+        global $wpdb;
+        
+        $last_rejection = $wpdb->get_row($wpdb->prepare(
+            "SELECT last_rejected_date, retry_count FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE email = %s AND status = 'rejected' AND last_rejected_date IS NOT NULL
+             ORDER BY last_rejected_date DESC LIMIT 1",
+            $email
+        ));
+        
+        if ($last_rejection) {
+            $cooldown_end = strtotime($last_rejection->last_rejected_date) + (5 * 60); // 5 minutes
+            $now = time();
+            
+            if ($now < $cooldown_end) {
+                return array(
+                    'in_cooldown' => true,
+                    'remaining_seconds' => $cooldown_end - $now,
+                    'retry_count' => $last_rejection->retry_count
+                );
+            }
+        }
+        
+        return array('in_cooldown' => false);
+    }
+    
+    /**
+     * Get current user's Google ID
+     */
+    private function get_current_google_id() {
+        if (is_user_logged_in()) {
+            $current_user = wp_get_current_user();
+            $google_id = get_user_meta($current_user->ID, 'nsl-google-id', true);
+            return $google_id ?: $current_user->ID;
+        }
+        return '';
+    }
+    
+    /**
+     * Send rejection email with retry information
+     */
+    private function send_rejection_email_with_retry_info($registration, $retry_count, $reason = '', $ban_until = null) {
+        try {
+            $to = $registration->email;
+            $subject = '[Cobalah.id] Update Pendaftaran Bisnis - Percobaan #' . $retry_count;
+            
+            $cooldown_info = '';
+            if ($ban_until) {
+                $cooldown_info = '
+                    <div style="background: #ffebee; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                        <h4 style="color: #d32f2f;">🚫 Akun Dibatasi Sementara</h4>
+                        <p>Karena 3 kali penolakan, akun Google Anda dibatasi selama 24 jam.</p>
+                        <p><strong>Dapat mendaftar lagi:</strong> ' . date('d/m/Y H:i', strtotime($ban_until)) . '</p>
+                    </div>';
+            } else {
+                $cooldown_info = '
+                    <div style="background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                        <h4 style="color: #1976d2;">⏱️ Langkah Selanjutnya:</h4>
+                        <ul>
+                            <li>Anda dapat mencoba lagi dalam <strong>5 menit</strong></li>
+                            <li>Ini adalah percobaan ke-<strong>' . $retry_count . ' dari 3</strong></li>
+                            <li>Silakan perbaiki alasan penolakan di atas</li>
+                            <li>Setelah 3 penolakan, ada periode tunggu 24 jam</li>
+                        </ul>
+                    </div>';
+            }
+            
+            $message = '
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Update Pendaftaran Bisnis</title>
+            </head>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+                    <div style="background: #dc3232; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+                        <h1 style="margin: 0;">📋 Update Pendaftaran - Percobaan #' . $retry_count . '</h1>
+                    </div>
+                    
+                    <div style="background: #f8f9fa; padding: 30px; border: 1px solid #dee2e6; border-radius: 0 0 8px 8px;">
+                        <p>Halo <strong>' . esc_html($registration->business_name) . '</strong>,</p>
+                        
+                        <p>Pendaftaran bisnis Anda belum dapat disetujui saat ini.</p>';
+                        
+            if (!empty($reason)) {
+                $message .= '
+                        <div style="background: #fff3cd; padding: 15px; border-radius: 5px; border: 1px solid #ffeaa7; margin: 20px 0;">
+                            <h4 style="margin-top: 0;">📝 Alasan Penolakan:</h4>
+                            <p>' . esc_html($reason) . '</p>
+                        </div>';
+            }
+            
+            $message .= $cooldown_info;
+            
+            $message .= '
+                        <p>Jika ada pertanyaan, hubungi kami di <a href="mailto:bantuan@cobalah.id">bantuan@cobalah.id</a></p>
+                        
+                        <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+                        <p style="font-size: 12px; color: #666; text-align: center;">
+                            Email ini dikirim otomatis oleh sistem Cobalah.id
+                        </p>
+                    </div>
+                </div>
+            </body>
+            </html>';
+            
+            $headers = array(
+                'Content-Type: text/html; charset=UTF-8',
+                'From: Cobalah.id - Website Gratis untuk UMKM Indonesia <tidak-dibalas@cobalah.id>',
+                'Reply-To: bantuan@cobalah.id'
+            );
+            
+            return wp_mail($to, $subject, $message, $headers);
+            
+        } catch (Exception $e) {
+            error_log('MSME Enhanced Rejection Email Error: ' . $e->getMessage());
+            return false;
+        }
     }
     
 }
