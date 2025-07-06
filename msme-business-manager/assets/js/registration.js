@@ -578,7 +578,7 @@ function showVerificationSuccess(data) {
     step3.innerHTML = `
         <div style="text-align: center; padding: 40px 20px;">
             <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 15px; padding: 30px; margin: 20px 0;">
-                <h2 style="color: #155724; margin: 0 0 20px 0;">[CHECK] Verifikasi Berhasil!</h2>
+                <h2 style="color: #155724; margin: 0 0 20px 0;">[✓] Verifikasi Berhasil!</h2>
                 <p style="font-size: 18px; color: #155724; margin: 0 0 15px 0;">
                     <strong>Verifikasi email berhasil! Pendaftaran Anda akan diproses oleh admin dalam 24 jam.</strong>
                 </p>
@@ -588,7 +588,7 @@ function showVerificationSuccess(data) {
                     <p><strong>Website:</strong> ${data.subdomain || 'N/A'}.cobalah.id</p>
                 </div>
                 <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 20px; margin: 20px 0;">
-                    <h4 style="color: #856404; margin: 0 0 15px 0;">[LIST] Langkah Selanjutnya:</h4>
+                    <h4 style="color: #856404; margin: 0 0 15px 0;">[>>] Langkah Selanjutnya:</h4>
                     <ul style="text-align: left; color: #856404;">
                         <li>Tim admin akan mengulas pendaftaran Anda</li>
                         <li>Anda akan menerima email konfirmasi dalam 24 jam</li>
@@ -830,16 +830,318 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Admin Registration Management Functions
 function approveRegistration(id) {
-    if (confirm('Setujui pendaftaran ini?')) {
-        console.log('Approve registration:', id);
-        // TODO: Implement approval AJAX call
+    if (confirm('Setujui pendaftaran ini? Bisnis akan mendapatkan akses ke website mereka.')) {
+        console.log('Approving registration:', id);
+        
+        // Show loading state
+        showNotification('Memproses persetujuan...', 'info');
+        
+        // Check if required variables exist
+        if (typeof ajaxurl === 'undefined') {
+            showNotification('Error: ajaxurl tidak tersedia', 'error');
+            return;
+        }
+        
+        if (typeof msme_ajax_nonce === 'undefined') {
+            showNotification('Error: Security nonce tidak tersedia', 'error');
+            return;
+        }
+        
+        // Create AJAX request
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', ajaxurl, true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        console.log('Approval response:', response);
+                        
+                        if (response.success) {
+                            // Success - update UI
+                            showNotification('✅ Pendaftaran berhasil disetujui!', 'success');
+                            
+                            // Update the row in the table
+                            updateRegistrationRow(id, 'approved');
+                            
+                            // Update statistics if present
+                            updateDashboardStats();
+                            
+                        } else {
+                            // Enhanced error handling for retry system
+                            if (response.data && response.data.type) {
+                                if (response.data.type === 'banned') {
+                                    showBanMessage(response.data);
+                                } else if (response.data.type === 'cooldown') {
+                                    showCooldownMessage(response.data);
+                                } else {
+                                    showNotification('[X] ' + response.data.message, 'error');
+                                }
+                            } else {
+                                showNotification('[X] Gagal: ' + (response.data.message || 'Unknown error'), 'error');
+                            }
+                        }
+                    } catch (e) {
+                        console.error('JSON parse error:', e);
+                        showNotification('❌ Respons server tidak valid', 'error');
+                    }
+                } else {
+                    console.error('HTTP Error:', xhr.status);
+                    showNotification('❌ Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
+                }
+            }
+        };
+        
+        xhr.onerror = function() {
+            console.error('Network error occurred');
+            showNotification('❌ Kesalahan jaringan', 'error');
+        };
+        
+        // Send request
+        const formData = 'action=msme_approve_registration&registration_id=' + id + '&nonce=' + msme_ajax_nonce;
+        xhr.send(formData);
     }
 }
 
 function rejectRegistration(id) {
-    if (confirm('Tolak pendaftaran ini?')) {
-        console.log('Reject registration:', id);
-        // TODO: Implement rejection AJAX call
+    const reason = prompt('Alasan penolakan (opsional):');
+    if (reason !== null) { // User didn't cancel
+        console.log('Rejecting registration:', id, 'Reason:', reason);
+        
+        // Show loading state
+        showNotification('Memproses penolakan...', 'info');
+        
+        // Check if required variables exist
+        if (typeof ajaxurl === 'undefined') {
+            showNotification('Error: ajaxurl tidak tersedia', 'error');
+            return;
+        }
+        
+        if (typeof msme_ajax_nonce === 'undefined') {
+            showNotification('Error: Security nonce tidak tersedia', 'error');
+            return;
+        }
+        
+        // Create AJAX request
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', ajaxurl, true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === 4) {
+                if (xhr.status === 200) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        console.log('Rejection response:', response);
+                        
+                        if (response.success) {
+                            // Success - update UI
+                            showNotification('✅ Pendaftaran berhasil ditolak!', 'success');
+                            
+                            // Update the row in the table
+                            updateRegistrationRow(id, 'rejected');
+                            
+                            // Update statistics if present
+                            updateDashboardStats();
+                            
+                        } else {
+                            // Error response
+                            showNotification('❌ Gagal menolak pendaftaran: ' + (response.data || 'Unknown error'), 'error');
+                        }
+                    } catch (e) {
+                        console.error('JSON parse error:', e);
+                        showNotification('❌ Respons server tidak valid', 'error');
+                    }
+                } else {
+                    console.error('HTTP Error:', xhr.status);
+                    showNotification('❌ Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
+                }
+            }
+        };
+        
+        xhr.onerror = function() {
+            console.error('Network error occurred');
+            showNotification('❌ Kesalahan jaringan', 'error');
+        };
+        
+        // Send request
+        const formData = 'action=msme_reject_registration&registration_id=' + id + '&reason=' + encodeURIComponent(reason) + '&nonce=' + msme_ajax_nonce;
+        xhr.send(formData);
     }
 }
 
+// Utility Functions
+function showNotification(message, type = 'info') {
+    // Remove any existing notifications
+    const existingNotices = document.querySelectorAll('.msme-admin-notice');
+    existingNotices.forEach(notice => notice.remove());
+    
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notice notice-${type} is-dismissible msme-admin-notice`;
+    notification.innerHTML = `
+        <p><strong>${message}</strong></p>
+        <button type="button" class="notice-dismiss" onclick="this.parentElement.remove();">
+            <span class="screen-reader-text">Dismiss this notice.</span>
+        </button>
+    `;
+    
+    // Insert at top of content
+    const contentWrap = document.querySelector('.wrap') || document.querySelector('body');
+    if (contentWrap) {
+        contentWrap.insertBefore(notification, contentWrap.firstChild);
+        
+        // Auto-dismiss after 5 seconds for non-error messages
+        if (type !== 'error') {
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+    }
+}
+
+function updateRegistrationRow(id, newStatus) {
+    // Find the row by registration ID
+    const row = document.querySelector(`tr[data-registration-id="${id}"]`);
+    if (!row) {
+        console.log('Could not find row for registration ID:', id);
+        return;
+    }
+    
+    // Find the status cell (5th column - index 4)
+    const cells = row.querySelectorAll('td');
+    if (cells.length >= 6) {
+        const statusCell = cells[4]; // Status column
+        const actionCell = cells[6]; // Action column
+        
+        // Update status cell
+        if (newStatus === 'approved') {
+            statusCell.innerHTML = '<span style="color: #46b450; font-weight: bold;">✓ Disetujui</span>';
+            actionCell.innerHTML = '<span style="color: #46b450;">✓ Disetujui</span>';
+        } else if (newStatus === 'rejected') {
+            statusCell.innerHTML = '<span style="color: #dc3232; font-weight: bold;">✗ Ditolak</span>';
+            actionCell.innerHTML = '<span style="color: #dc3232;">✗ Ditolak</span>';
+        }
+        
+        // Add a brief highlight effect
+        row.style.backgroundColor = '#f0f8ff';
+        setTimeout(() => {
+            row.style.backgroundColor = '';
+        }, 2000);
+    }
+}
+
+function updateDashboardStats() {
+    // Check if required variables exist
+    if (typeof ajaxurl === 'undefined' || typeof msme_ajax_nonce === 'undefined') {
+        console.log('Cannot update stats: missing required variables');
+        return;
+    }
+    
+    // Reload stats section via AJAX
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', ajaxurl, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4 && xhr.status === 200) {
+            try {
+                const response = JSON.parse(xhr.responseText);
+                if (response.success && response.data) {
+                    // Update stats display
+                    const stats = response.data;
+                    const totalEl = document.querySelector('#stat-total');
+                    const pendingEl = document.querySelector('#stat-pending');
+                    const approvedEl = document.querySelector('#stat-approved');
+                    const rejectedEl = document.querySelector('#stat-rejected');
+                    
+                    if (totalEl) totalEl.textContent = stats.total;
+                    if (pendingEl) pendingEl.textContent = stats.pending;
+                    if (approvedEl) approvedEl.textContent = stats.approved;
+                    if (rejectedEl) rejectedEl.textContent = stats.rejected;
+                }
+            } catch (e) {
+                console.log('Failed to update stats:', e);
+            }
+        }
+    };
+    
+    const formData = 'action=msme_get_registration_stats&nonce=' + msme_ajax_nonce;
+    xhr.send(formData);
+}
+
+// Debug function to check if required variables exist
+function checkAjaxVariables() {
+    console.log('=== AJAX Variables Check ===');
+    console.log('ajaxurl:', typeof ajaxurl !== 'undefined' ? ajaxurl : 'NOT DEFINED');
+    console.log('msme_ajax_nonce:', typeof msme_ajax_nonce !== 'undefined' ? msme_ajax_nonce : 'NOT DEFINED');
+    console.log('==========================');
+}
+
+// Call debug function when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    checkAjaxVariables();
+});
+
+function showBanMessage(data) {
+    const container = document.querySelector('.msme-registration-container') || document.body;
+    
+    const banMessage = document.createElement('div');
+    banMessage.style.cssText = 'background: #ffebee; border: 2px solid #f44336; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;';
+    banMessage.innerHTML = `
+        <h3 style="color: #d32f2f; margin: 0 0 15px 0;">[BLOCK] Akun Dibatasi Sementara</h3>
+        <p style="margin: 10px 0;">${data.message}</p>
+        <p style="color: #666; font-size: 14px; margin: 10px 0;">
+            [INFO] Periode pembatasan ini memberikan waktu untuk meninjau persyaratan pendaftaran
+        </p>
+    `;
+    
+    container.insertBefore(banMessage, container.firstChild);
+}
+
+function showCooldownMessage(data) {
+    const container = document.querySelector('.msme-registration-container') || document.body;
+    
+    const cooldownMessage = document.createElement('div');
+    cooldownMessage.style.cssText = 'background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;';
+    cooldownMessage.innerHTML = `
+        <h3 style="color: #856404; margin: 0 0 15px 0;">[CLOCK] Periode Tunggu Aktif</h3>
+        <p style="margin: 10px 0;">${data.message}</p>
+        <div id="countdown-timer" style="font-size: 24px; font-weight: bold; color: #856404; margin: 15px 0;">
+            ${Math.ceil(data.remaining_seconds / 60)}:${String(data.remaining_seconds % 60).padStart(2, '0')}
+        </div>
+        <p style="color: #666; font-size: 14px;">
+            [INFO] Percobaan ${data.retry_count} dari 3 | Gunakan waktu ini untuk memperbaiki informasi bisnis
+        </p>
+    `;
+    
+    container.insertBefore(cooldownMessage, container.firstChild);
+    
+    // Start countdown timer
+    startCountdownTimer(data.remaining_seconds);
+}
+
+function startCountdownTimer(seconds) {
+    const timerElement = document.getElementById('countdown-timer');
+    if (!timerElement) return;
+    
+    const updateTimer = () => {
+        if (seconds <= 0) {
+            timerElement.textContent = '[✓] Waktu tunggu selesai - silakan refresh halaman';
+            return;
+        }
+        
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        timerElement.textContent = `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+        
+        seconds--;
+        setTimeout(updateTimer, 1000);
+    };
+    
+    updateTimer();
+}
