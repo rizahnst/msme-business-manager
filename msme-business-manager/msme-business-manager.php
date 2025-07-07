@@ -1915,12 +1915,12 @@ class MSME_Business_Manager {
     }
     
     /**
-     * Handle business registration submission
+     * Handle business registration submission with proper auto-overwrite for rejected entries
      */
     public function submit_business_registration() {
         // Verify nonce
         if (!wp_verify_nonce($_POST['nonce'], 'msme_registration_nonce')) {
-            wp_send_json_error(array('message' => 'Invalid nonce'));
+            wp_send_json_error(array('message' => 'Invalid security token'));
             return;
         }
         
@@ -1979,9 +1979,6 @@ class MSME_Business_Manager {
             return;
         }
         
-        // Clean up any expired/abandoned registrations first
-        $this->prepare_clean_registration($owner_email, $subdomain);
-        
         global $wpdb;
         
         // Check subdomain availability (only approved/verified registrations)
@@ -2004,13 +2001,13 @@ class MSME_Business_Manager {
         }
         
         // Check if email already has verified/approved registration
-        $existing_email = $wpdb->get_var($wpdb->prepare(
+        $existing_active_email = $wpdb->get_var($wpdb->prepare(
             "SELECT id FROM {$wpdb->base_prefix}msme_registrations 
              WHERE email = %s AND status IN ('verified', 'approved')",
             $owner_email
         ));
         
-        if ($existing_email) {
+        if ($existing_active_email) {
             wp_send_json_error(array('message' => 'Email sudah terdaftar dengan bisnis aktif'));
             return;
         }
@@ -2020,7 +2017,6 @@ class MSME_Business_Manager {
         $otp_expires = date('Y-m-d H:i:s', current_time('timestamp') + (15 * 60)); // 15 minutes
         
         // Get Google ID if logged in
-        $google_id = '';
         if (is_user_logged_in()) {
             $current_user = wp_get_current_user();
             $google_id = get_user_meta($current_user->ID, 'nsl-google-id', true);
@@ -2029,50 +2025,113 @@ class MSME_Business_Manager {
             }
         }
         
-        // Insert registration data
-        $result = $wpdb->insert(
-            $wpdb->base_prefix . 'msme_registrations',
-            array(
-                'email' => $owner_email,
-                'google_id' => $google_id,
-                'business_name' => $business_name,
-                'subdomain' => $subdomain,
-                'business_category' => $business_category,
-                'business_address' => $business_address,
-                'phone_number' => $phone_number,
-                'status' => 'pending',
-                'otp_code' => $otp_code,
-                'otp_expires' => $otp_expires,
-                'created_date' => current_time('mysql')
-            ),
-            array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s')
-        );
+        // Start transaction
+        $wpdb->query('START TRANSACTION');
         
-        if ($result === false) {
-            wp_send_json_error(array('message' => 'Database error: ' . $wpdb->last_error));
-            return;
-        }
-        
-        // Send OTP email
-        $email_sent = $this->send_otp_email($owner_email, $owner_name, $otp_code, $business_name);
-        
-        if (!$email_sent) {
-            // Still return success but log the email issue
-            error_log('MSME: OTP email failed to send to ' . $owner_email);
-            wp_send_json_success(array(
-                'message' => 'Registration successful but email sending failed. Please contact support.',
-                'step' => 3,
-                'email_status' => 'failed'
+        try {
+            // Check for existing rejected registration for this email
+            $existing_rejected = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$wpdb->base_prefix}msme_registrations 
+                 WHERE email = %s AND status = 'rejected'
+                 ORDER BY created_date DESC LIMIT 1",
+                $owner_email
             ));
-            return;
+            
+            if ($existing_rejected) {
+                // UPDATE existing rejected registration instead of INSERT
+                $result = $wpdb->update(
+                    $wpdb->base_prefix . 'msme_registrations',
+                    array(
+                        'google_id' => $google_id,
+                        'business_name' => $business_name,
+                        'subdomain' => $subdomain,
+                        'business_category' => $business_category,
+                        'business_address' => $business_address,
+                        'phone_number' => $phone_number,
+                        'status' => 'pending',
+                        'otp_code' => $otp_code,
+                        'otp_expires' => $otp_expires,
+                        'created_date' => current_time('mysql'),
+                        // Keep retry tracking data from previous attempt
+                        'last_rejected_date' => $existing_rejected->last_rejected_date,
+                        'retry_count' => $existing_rejected->retry_count,
+                        'ban_until' => $existing_rejected->ban_until,
+                        'google_account_ban' => $existing_rejected->google_account_ban
+                    ),
+                    array('id' => $existing_rejected->id),
+                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s'),
+                    array('%d')
+                );
+                
+                $registration_id = $existing_rejected->id;
+                $operation = 'updated';
+                
+            } else {
+                // INSERT new registration (first time registration)
+                $result = $wpdb->insert(
+                    $wpdb->base_prefix . 'msme_registrations',
+                    array(
+                        'email' => $owner_email,
+                        'google_id' => $google_id,
+                        'business_name' => $business_name,
+                        'subdomain' => $subdomain,
+                        'business_category' => $business_category,
+                        'business_address' => $business_address,
+                        'phone_number' => $phone_number,
+                        'status' => 'pending',
+                        'otp_code' => $otp_code,
+                        'otp_expires' => $otp_expires,
+                        'created_date' => current_time('mysql'),
+                        'retry_count' => 0,
+                        'last_rejected_date' => null,
+                        'ban_until' => null,
+                        'google_account_ban' => null
+                    ),
+                    array('%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s', '%s')
+                );
+                
+                $registration_id = $wpdb->insert_id;
+                $operation = 'inserted';
+            }
+            
+            if ($result === false) {
+                throw new Exception('Failed to save registration data: ' . $wpdb->last_error);
+            }
+            
+            // Send OTP email
+            $email_sent = $this->send_otp_email($owner_email, $owner_name, $otp_code, $business_name);
+            
+            if (!$email_sent) {
+                throw new Exception('Failed to send OTP email');
+            }
+            
+            // Commit transaction
+            $wpdb->query('COMMIT');
+            
+            // Log successful registration
+            error_log("MSME Registration {$operation}: ID {$registration_id}, Email: {$owner_email}, Business: {$business_name}");
+            
+            // Return success response
+            wp_send_json_success(array(
+                'message' => 'Pendaftaran berhasil! Kode OTP telah dikirim ke email Anda.',
+                'registration_id' => $registration_id,
+                'email' => $owner_email,
+                'business_name' => $business_name,
+                'otp_expires' => $otp_expires,
+                'operation' => $operation,
+                'next_step' => 'email_verification'
+            ));
+            
+        } catch (Exception $e) {
+            // Rollback transaction
+            $wpdb->query('ROLLBACK');
+            
+            error_log('MSME Registration Error: ' . $e->getMessage());
+            wp_send_json_error(array(
+                'message' => 'Terjadi kesalahan saat memproses pendaftaran. Silakan coba lagi.',
+                'error_details' => $e->getMessage()
+            ));
         }
-        
-        wp_send_json_success(array(
-            'message' => 'Registration successful! OTP sent to your email.',
-            'step' => 3,
-            'email_status' => 'sent',
-            'otp_expires' => $otp_expires
-        ));
     }
     
     /**
@@ -2277,61 +2336,26 @@ class MSME_Business_Manager {
     }
     
     /**
-     * Check and clean up existing registration before allowing new one
+     * Clean up expired or abandoned registrations (legacy method - now integrated above)
      */
     private function prepare_clean_registration($email, $subdomain) {
         global $wpdb;
         
-        // Check if user has any pending registrations
-        $existing_registrations = $wpdb->get_results($wpdb->prepare(
-            "SELECT id, subdomain, created_date, otp_expires FROM {$wpdb->base_prefix}msme_registrations 
-             WHERE email = %s AND status = 'pending'",
-            $email
+        // This method is now legacy since we handle overwrite in the main method
+        // But keeping it for backward compatibility
+        
+        // Clean up expired OTP registrations (older than 1 hour)
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->base_prefix}msme_registrations 
+             WHERE status = 'pending' AND otp_expires < %s",
+            date('Y-m-d H:i:s', current_time('timestamp') - 3600)
         ));
         
-        if ($existing_registrations) {
-            // Clean up all pending registrations for this email
-            $cleaned = $this->cleanup_expired_registrations($email);
-            
-            error_log("MSME: User {$email} had {$cleaned} pending registration(s), cleaned up for fresh start");
-            return true;
+        // Log cleanup
+        $deleted = $wpdb->rows_affected;
+        if ($deleted > 0) {
+            error_log("MSME: Cleaned up {$deleted} expired registrations");
         }
-        
-        // Also check if the specific subdomain exists in pending status
-        $subdomain_exists = $wpdb->get_var($wpdb->prepare(
-            "SELECT id FROM {$wpdb->base_prefix}msme_registrations 
-             WHERE subdomain = %s AND status = 'pending'",
-            $subdomain
-        ));
-        
-        if ($subdomain_exists) {
-            // Check if this is an expired registration
-            $expired_subdomain = $wpdb->get_row($wpdb->prepare(
-                "SELECT id, email, otp_expires FROM {$wpdb->base_prefix}msme_registrations 
-                 WHERE subdomain = %s AND status = 'pending'",
-                $subdomain
-            ));
-            
-            if ($expired_subdomain) {
-                $current_time = current_time('mysql');
-                
-                // If OTP expired or very old (1+ hour), clean it up
-                if (!$expired_subdomain->otp_expires || 
-                    strtotime($current_time) > strtotime($expired_subdomain->otp_expires) + (60 * 60)) {
-                    
-                    $wpdb->delete(
-                        $wpdb->base_prefix . 'msme_registrations',
-                        array('id' => $expired_subdomain->id),
-                        array('%d')
-                    );
-                    
-                    error_log("MSME: Cleaned up expired subdomain registration: {$subdomain}");
-                    return true;
-                }
-            }
-        }
-        
-        return true;
     }
     
     /**
@@ -2650,6 +2674,7 @@ class MSME_Business_Manager {
         add_action('wp_ajax_msme_approve_registration', array($this, 'handle_approve_registration'));
         add_action('wp_ajax_msme_reject_registration', array($this, 'handle_reject_registration'));
         add_action('wp_ajax_msme_get_registration_stats', array($this, 'get_registration_stats'));
+        add_action('wp_ajax_msme_get_registration_details', array($this, 'get_registration_details'));
     }
     
     /**
@@ -3250,6 +3275,51 @@ class MSME_Business_Manager {
         } catch (Exception $e) {
             error_log('MSME Enhanced Rejection Email Error: ' . $e->getMessage());
             return false;
+        }
+    }
+    
+    /**
+     * Get registration details for modal display
+     */
+    public function get_registration_details() {
+        // Verify nonce
+        if (!wp_verify_nonce($_POST['nonce'], 'msme_admin_nonce')) {
+            wp_send_json_error('Invalid security token');
+            return;
+        }
+        
+        // Check user capabilities
+        if (!current_user_can('manage_network')) {
+            wp_send_json_error('Insufficient permissions');
+            return;
+        }
+        
+        // Get registration ID
+        $registration_id = intval($_POST['registration_id']);
+        if (!$registration_id) {
+            wp_send_json_error('Invalid registration ID');
+            return;
+        }
+        
+        global $wpdb;
+        
+        try {
+            // Get registration details
+            $registration = $wpdb->get_row($wpdb->prepare(
+                "SELECT * FROM {$wpdb->base_prefix}msme_registrations WHERE id = %d",
+                $registration_id
+            ));
+            
+            if (!$registration) {
+                wp_send_json_error('Registration not found');
+                return;
+            }
+            
+            wp_send_json_success($registration);
+            
+        } catch (Exception $e) {
+            error_log('MSME Get Details Error: ' . $e->getMessage());
+            wp_send_json_error('Failed to retrieve registration details');
         }
     }
     

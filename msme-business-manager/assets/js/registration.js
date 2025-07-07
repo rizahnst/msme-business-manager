@@ -1145,3 +1145,148 @@ function startCountdownTimer(seconds) {
     
     updateTimer();
 }
+
+function viewRegistrationDetails(id) {
+    console.log('Viewing details for registration:', id);
+    
+    // Check if required variables exist
+    if (typeof ajaxurl === 'undefined' || typeof msme_ajax_nonce === 'undefined') {
+        showNotification('Error: AJAX variables tidak tersedia', 'error');
+        return;
+    }
+    
+    // Show loading
+    showNotification('Memuat detail...', 'info');
+    
+    // Create AJAX request to get registration details
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', ajaxurl, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4) {
+            if (xhr.status === 200) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    console.log('Details response:', response);
+                    
+                    if (response.success) {
+                        showRegistrationDetailsModal(response.data);
+                    } else {
+                        showNotification('❌ Gagal memuat detail: ' + (response.data || 'Unknown error'), 'error');
+                    }
+                } catch (e) {
+                    console.error('JSON parse error:', e);
+                    showNotification('❌ Respons server tidak valid', 'error');
+                }
+            } else {
+                console.error('HTTP Error:', xhr.status);
+                showNotification('❌ Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
+            }
+        }
+    };
+    
+    xhr.onerror = function() {
+        console.error('Network error occurred');
+        showNotification('❌ Kesalahan jaringan', 'error');
+    };
+    
+    // Send request
+    const formData = 'action=msme_get_registration_details&registration_id=' + id + '&nonce=' + msme_ajax_nonce;
+    xhr.send(formData);
+}
+
+function showRegistrationDetailsModal(data) {
+    // Remove existing modal if any
+    const existingModal = document.getElementById('registration-details-modal');
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // Create modal
+    const modal = document.createElement('div');
+    modal.id = 'registration-details-modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    `;
+    
+    modal.innerHTML = `
+        <div style="background: white; border-radius: 8px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto; padding: 30px; position: relative;">
+            <button onclick="this.closest('#registration-details-modal').remove()" style="position: absolute; top: 15px; right: 15px; background: #dc3232; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer;">✕</button>
+            
+            <h2 style="margin: 0 0 20px 0; color: #0073aa;">Detail Pendaftaran</h2>
+            
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">ID Registrasi</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.id}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Nama Bisnis</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.business_name}</td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Email</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.email}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Kategori</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.business_category}</td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Subdomain</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.subdomain}.cobalah.id</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Telefon</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.phone_number || 'Tidak disediakan'}</td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Alamat</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.business_address || 'Tidak disediakan'}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Status</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">
+                        <span style="color: ${data.status === 'approved' ? '#46b450' : data.status === 'rejected' ? '#dc3232' : '#856404'}; font-weight: bold;">
+                            ${data.status === 'approved' ? '✓ Disetujui' : data.status === 'rejected' ? '✗ Ditolak' : data.status === 'verified' ? 'Terverifikasi' : 'Menunggu'}
+                        </span>
+                    </td>
+                </tr>
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Tanggal Daftar</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.created_date}</td>
+                </tr>
+                ${data.approved_date ? `
+                <tr>
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Tanggal Diproses</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.approved_date}</td>
+                </tr>
+                ` : ''}
+                ${data.admin_notes ? `
+                <tr style="background: #f8f9fa;">
+                    <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Catatan Admin</td>
+                    <td style="padding: 10px; border: 1px solid #ddd;">${data.admin_notes}</td>
+                </tr>
+                ` : ''}
+            </table>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <button onclick="this.closest('#registration-details-modal').remove()" style="background: #0073aa; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer;">
+                    Tutup
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+}
