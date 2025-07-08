@@ -1960,7 +1960,7 @@ class MSME_Business_Manager {
         
         if ($ban_check['is_banned']) {
             wp_send_json_error(array(
-                'message' => 'Akun Google Anda dibatasi selama 24 jam karena 3 kali penolakan. Coba lagi ' . $ban_check['remaining_hours'] . ' jam lagi.',
+                'message' => 'Akun Google Anda dibatasi selama 1 jam karena 3 kali penolakan. Coba lagi ' . $ban_check['remaining_hours'] . ' jam lagi.',
                 'type' => 'banned',
                 'ban_until' => $ban_check['ban_until']
             ));
@@ -2819,7 +2819,7 @@ class MSME_Business_Manager {
             $ban_until = null;
             $google_account_ban = null;
             if ($current_retry_count >= 3) {
-                $ban_until = date('Y-m-d H:i:s', current_time('timestamp') + (24 * 60 * 60)); // 24 hours
+                $ban_until = date('Y-m-d H:i:s', current_time('timestamp') + (1 * 60 * 60)); // 1 hour
                 $google_account_ban = $google_id;
             }
             
@@ -3196,7 +3196,7 @@ class MSME_Business_Manager {
     }
     
     /**
-     * Send rejection email with retry information
+     * Send rejection email with retry information (UPDATED with Indonesian timezone)
      */
     private function send_rejection_email_with_retry_info($registration, $retry_count, $reason = '', $ban_until = null) {
         try {
@@ -3205,11 +3205,15 @@ class MSME_Business_Manager {
             
             $cooldown_info = '';
             if ($ban_until) {
+                // Convert to Indonesian timezone (UTC+7)
+                $indonesian_time = $this->convert_to_indonesian_time($ban_until);
+                
                 $cooldown_info = '
                     <div style="background: #ffebee; padding: 15px; border-radius: 5px; margin: 15px 0;">
                         <h4 style="color: #d32f2f;">🚫 Akun Dibatasi Sementara</h4>
-                        <p>Karena 3 kali penolakan, akun Google Anda dibatasi selama 24 jam.</p>
-                        <p><strong>Dapat mendaftar lagi:</strong> ' . date('d/m/Y H:i', strtotime($ban_until)) . '</p>
+                        <p>Karena 3 kali penolakan, akun Google Anda dibatasi selama 1 jam untuk memberikan waktu meninjau persyaratan.</p>
+                        <p><strong>Dapat mendaftar lagi:</strong> ' . $indonesian_time . ' WIB</p>
+                        <p style="font-size: 12px; color: #666;">Waktu menggunakan zona waktu Indonesia (WIB/UTC+7)</p>
                     </div>';
             } else {
                 $cooldown_info = '
@@ -3219,7 +3223,7 @@ class MSME_Business_Manager {
                             <li>Anda dapat mencoba lagi dalam <strong>5 menit</strong></li>
                             <li>Ini adalah percobaan ke-<strong>' . $retry_count . ' dari 3</strong></li>
                             <li>Silakan perbaiki alasan penolakan di atas</li>
-                            <li>Setelah 3 penolakan, ada periode tunggu 24 jam</li>
+                            <li>Setelah 3 penolakan, ada periode tunggu 1 jam untuk meninjau persyaratan</li>
                         </ul>
                     </div>';
             }
@@ -3253,11 +3257,22 @@ class MSME_Business_Manager {
             $message .= $cooldown_info;
             
             $message .= '
+                        <div style="background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                            <h4 style="color: #2e7d32;">💡 Tips untuk Pendaftaran Berhasil:</h4>
+                            <ul>
+                                <li>Pastikan informasi bisnis lengkap dan akurat</li>
+                                <li>Gunakan nama bisnis yang jelas dan mudah dipahami</li>
+                                <li>Sertakan alamat lengkap dengan nomor dan RT/RW</li>
+                                <li>Pilih kategori bisnis yang sesuai</li>
+                            </ul>
+                        </div>
+                        
                         <p>Jika ada pertanyaan, hubungi kami di <a href="mailto:bantuan@cobalah.id">bantuan@cobalah.id</a></p>
                         
                         <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
                         <p style="font-size: 12px; color: #666; text-align: center;">
-                            Email ini dikirim otomatis oleh sistem Cobalah.id
+                            Email ini dikirim otomatis oleh sistem Cobalah.id<br>
+                            Waktu server: ' . date('d/m/Y H:i') . ' WIB
                         </p>
                     </div>
                 </div>
@@ -3275,6 +3290,42 @@ class MSME_Business_Manager {
         } catch (Exception $e) {
             error_log('MSME Enhanced Rejection Email Error: ' . $e->getMessage());
             return false;
+        }
+    }
+    
+    /**
+     * Convert UTC datetime to Indonesian timezone (WIB/UTC+7)
+     */
+    private function convert_to_indonesian_time($utc_datetime) {
+        try {
+            // Create DateTime object from UTC time
+            $date = new DateTime($utc_datetime, new DateTimeZone('UTC'));
+            
+            // Convert to Indonesian timezone
+            $date->setTimezone(new DateTimeZone('Asia/Jakarta'));
+            
+            // Format as Indonesian date/time
+            return $date->format('d/m/Y H:i');
+            
+        } catch (Exception $e) {
+            error_log('MSME Timezone Conversion Error: ' . $e->getMessage());
+            
+            // Fallback: add 7 hours manually
+            $timestamp = strtotime($utc_datetime) + (7 * 3600);
+            return date('d/m/Y H:i', $timestamp);
+        }
+    }
+    
+    /**
+     * Get current Indonesian time as formatted string
+     */
+    private function get_indonesian_time_now() {
+        try {
+            $date = new DateTime('now', new DateTimeZone('Asia/Jakarta'));
+            return $date->format('d/m/Y H:i');
+        } catch (Exception $e) {
+            // Fallback: current time + 7 hours
+            return date('d/m/Y H:i', time() + (7 * 3600));
         }
     }
     
