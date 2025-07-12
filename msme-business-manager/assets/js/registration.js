@@ -877,10 +877,10 @@ function approveRegistration(id) {
                                 } else if (response.data.type === 'cooldown') {
                                     showCooldownMessage(response.data);
                                 } else {
-                                    showNotification('[X] ' + response.data.message, 'error');
+                                    showNotification('❌ ' + response.data.message, 'error');
                                 }
                             } else {
-                                showNotification('[X] Gagal: ' + (response.data.message || 'Unknown error'), 'error');
+                                showNotification('❌ Gagal: ' + (response.data.message || 'Unknown error'), 'error');
                             }
                         }
                     } catch (e) {
@@ -1020,11 +1020,11 @@ function updateRegistrationRow(id, newStatus) {
         
         // Update status cell
         if (newStatus === 'approved') {
-            statusCell.innerHTML = '<span style="color: #46b450; font-weight: bold;">✓ Disetujui</span>';
-            actionCell.innerHTML = '<span style="color: #46b450;">✓ Disetujui</span>';
+            statusCell.innerHTML = '<span style="color: #46b450; font-weight: bold;">✅ Disetujui</span>';
+            actionCell.innerHTML = '<span style="color: #46b450;">✅ Disetujui</span>';
         } else if (newStatus === 'rejected') {
-            statusCell.innerHTML = '<span style="color: #dc3232; font-weight: bold;">✗ Ditolak</span>';
-            actionCell.innerHTML = '<span style="color: #dc3232;">✗ Ditolak</span>';
+            statusCell.innerHTML = '<span style="color: #dc3232; font-weight: bold;">❌ Ditolak</span>';
+            actionCell.innerHTML = '<span style="color: #dc3232;">❌ Ditolak</span>';
         }
         
         // Add a brief highlight effect
@@ -1096,7 +1096,7 @@ function showBanMessage(data) {
         <h3 style="color: #d32f2f; margin: 0 0 15px 0;">[BLOCK] Akun Dibatasi Sementara</h3>
         <p style="margin: 10px 0;">${data.message}</p>
         <p style="color: #666; font-size: 14px; margin: 10px 0;">
-            [INFO] Periode pembatasan ini memberikan waktu untuk meninjau persyaratan pendaftaran
+            ℹ️ Periode pembatasan ini memberikan waktu untuk meninjau persyaratan pendaftaran
         </p>
     `;
     
@@ -1115,7 +1115,7 @@ function showCooldownMessage(data) {
             ${Math.ceil(data.remaining_seconds / 60)}:${String(data.remaining_seconds % 60).padStart(2, '0')}
         </div>
         <p style="color: #666; font-size: 14px;">
-            [INFO] Percobaan ${data.retry_count} dari 3 | Gunakan waktu ini untuk memperbaiki informasi bisnis
+            ℹ️ Percobaan ${data.retry_count} dari 3 | Gunakan waktu ini untuk memperbaiki informasi bisnis
         </p>
     `;
     
@@ -1258,7 +1258,7 @@ function showRegistrationDetailsModal(data) {
                     <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Status</td>
                     <td style="padding: 10px; border: 1px solid #ddd;">
                         <span style="color: ${data.status === 'approved' ? '#46b450' : data.status === 'rejected' ? '#dc3232' : '#856404'}; font-weight: bold;">
-                            ${data.status === 'approved' ? '✓ Disetujui' : data.status === 'rejected' ? '✗ Ditolak' : data.status === 'verified' ? 'Terverifikasi' : 'Menunggu'}
+                            ${data.status === 'approved' ? '✅ Disetujui' : data.status === 'rejected' ? '✗ Ditolak' : data.status === 'verified' ? 'Terverifikasi' : 'Menunggu'}
                         </span>
                     </td>
                 </tr>

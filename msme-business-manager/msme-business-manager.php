@@ -722,6 +722,12 @@ class MSME_Business_Manager {
         // Load text domain for internationalization
         load_plugin_textdomain('msme-business-manager', false, dirname(MSME_PLUGIN_BASENAME) . '/languages');
         
+        // DISABLE WORDPRESS EMOJI SYSTEM - ADD THESE 4 LINES:
+        remove_action('wp_head', 'print_emoji_detection_script', 7);
+        remove_action('wp_print_styles', 'print_emoji_styles');
+        remove_action('admin_print_scripts', 'print_emoji_detection_script');
+        remove_action('admin_print_styles', 'print_emoji_styles');
+        
         // Add admin notices
         add_action('network_admin_notices', array($this, 'activation_notice'));
         
@@ -1278,7 +1284,7 @@ class MSME_Business_Manager {
                         <!-- Clear Gmail Instructions -->
                         <div class="email-check-instructions">
                             <div class="instruction-header">
-                                <h4 style="color: #0073aa; margin: 0 0 15px 0;">[EMAIL] Silakan Cek Email Gmail Anda Sekarang!</h4>
+                                <h4 style="color: #0073aa; margin: 0 0 15px 0;">📧️ Silakan Cek Email Gmail Anda Sekarang!</h4>
                             </div>
                             
                             <div class="step-by-step-guide">
@@ -1320,7 +1326,7 @@ class MSME_Business_Manager {
                             
                             <!-- Troubleshooting Tips -->
                             <div class="troubleshooting-tips">
-                                <h4 style="color: #d63384; margin: 15px 0 10px 0;">[!] Tidak Menemukan Email?</h4>
+                                <h4 style="color: #d63384; margin: 15px 0 10px 0;">❗ Tidak Menemukan Email?</h4>
                                 <ul style="margin: 0; padding-left: 20px; font-size: 14px;">
                                     <li><strong>Cek folder Spam/Junk</strong> - Email mungkin masuk ke spam</li>
                                     <li><strong>Cek tab Promosi</strong> - Jika menggunakan Gmail di browser</li>
@@ -1332,14 +1338,14 @@ class MSME_Business_Manager {
                         
                         <form id="email-verification-form">
                             <div class="form-group">
-                                <label for="otp_code">[#] Masukkan Kode 6 Angka dari Email *</label>
+                                <label for="otp_code">#️⃣ Masukkan Kode 6 Angka dari Email *</label>
                                 <input type="text" id="otp_code" name="otp_code" required 
                                        placeholder="123456" maxlength="6" pattern="[0-9]{6}"
                                        style="font-size: 24px; text-align: center; letter-spacing: 5px; font-family: monospace;">
                                 <small>Contoh: 123456 (tanpa spasi atau tanda baca)</small>
                             </div>
                             
-                            <button type="submit" class="btn-submit">[✓] Verifikasi Email</button>
+                            <button type="submit" class="btn-submit">✅ Verifikasi Email</button>
                             
                             <!-- After your existing verification button, ADD: -->
                             <div class="resend-section" style="margin-top: 20px; text-align: center; padding-top: 20px; border-top: 1px solid #e0e0e0;">
@@ -1352,7 +1358,7 @@ class MSME_Business_Manager {
                             <!-- Help Section -->
                             <div class="help-section">
                                 <p style="text-align: center; margin: 25px 0 0 0; padding: 15px; background: #f8f9fa; border-radius: 5px; font-size: 13px;">
-                                    <strong>[?] Apa itu Kode Verifikasi (OTP)?</strong><br>
+                                    <strong>❓ Apa itu Kode Verifikasi (OTP)?</strong><br>
                                     Kode verifikasi adalah <strong>6 angka rahasia</strong> yang kami kirim ke email Anda untuk memastikan 
                                     bahwa email tersebut benar-benar milik Anda. Ini untuk keamanan akun bisnis Anda.
                                 </p>
