@@ -65,6 +65,20 @@ class MSME_Business_Manager {
      * Initialize hooks
      */
     private function init_hooks() {
+        // // COMPREHENSIVE EMOJI DISABLE - MULTIPLE POINTS
+        add_action('init', array($this, 'disable_wp_emoji_system'), 1);
+        // add_action('wp_loaded', array($this, 'disable_wp_emoji_system'), 1); 
+        // add_action('wp', array($this, 'disable_wp_emoji_system'), 1);
+        // add_action('admin_init', array($this, 'disable_wp_emoji_system'), 1);
+        
+        // // Filter-based emoji disable (more reliable)
+        // add_filter('option_use_smilies', '__return_false');
+        // add_filter('emoji_svg_url', '__return_empty_string');
+        
+        // // Output buffer to catch any remaining emoji img tags
+        // add_action('wp_head', array($this, 'start_emoji_cleanup'), 1);
+        // add_action('admin_head', array($this, 'start_emoji_cleanup'), 1);
+    
         // Activation and deactivation hooks
         register_activation_hook(__FILE__, array($this, 'activate_plugin'));
         register_deactivation_hook(__FILE__, array($this, 'deactivate_plugin'));
@@ -722,12 +736,6 @@ class MSME_Business_Manager {
         // Load text domain for internationalization
         load_plugin_textdomain('msme-business-manager', false, dirname(MSME_PLUGIN_BASENAME) . '/languages');
         
-        // DISABLE WORDPRESS EMOJI SYSTEM - ADD THESE 4 LINES:
-        remove_action('wp_head', 'print_emoji_detection_script', 7);
-        remove_action('wp_print_styles', 'print_emoji_styles');
-        remove_action('admin_print_scripts', 'print_emoji_detection_script');
-        remove_action('admin_print_styles', 'print_emoji_styles');
-        
         // Add admin notices
         add_action('network_admin_notices', array($this, 'activation_notice'));
         
@@ -1384,6 +1392,15 @@ class MSME_Business_Manager {
             return;
         }
         
+        // Enqueue admin CSS
+        wp_enqueue_style(
+            'msme-admin-style',
+            MSME_PLUGIN_URL . 'assets/css/admin.css',
+            array(),
+            MSME_PLUGIN_VERSION
+        );
+        
+        // Enqueue admin JavaScript  
         wp_enqueue_script(
             'msme-admin',
             MSME_PLUGIN_URL . 'assets/js/registration.js',
@@ -1402,14 +1419,6 @@ class MSME_Business_Manager {
             var ajaxurl = "' . admin_url('admin-ajax.php') . '";
             var msme_ajax_nonce = "' . wp_create_nonce('msme_admin_nonce') . '";
         </script>';
-        
-        // Also add global ajaxurl and nonce for registration.js
-        echo '<script>
-            var ajaxurl = "' . admin_url('admin-ajax.php') . '";
-            var msme_ajax_nonce = "' . wp_create_nonce('msme_admin_nonce') . '";
-        </script>';
-        
-        echo '<script>console.log("MSME admin JS loaded on: ' . $hook . '");</script>';
     }
     
     /**
@@ -2543,6 +2552,47 @@ class MSME_Business_Manager {
                     <input type="submit" class="button" value="Filter" />
                 </form>
                 
+            <!-- CSV Export Section -->
+            <div style="display: inline-block; margin-left: 20px;">
+                <button type="button" class="button button-primary msme-export-btn" onclick="showExportModal()">
+                    &#x1F4CA; Export CSV
+                </button>
+            </div>
+            
+            <!-- Export Modal (Hidden by default) -->
+            <div id="export-modal" class="msme-export-modal">
+                <h3>&#x1F4CB; Export Data Pendaftaran</h3>
+                
+                <div class="msme-export-form-group">
+                    <label>Filter Status:</label>
+                    <select id="export-status">
+                        <option value="all">Semua Status</option>
+                        <option value="pending">Menunggu Persetujuan</option>
+                        <option value="approved">Disetujui</option>
+                        <option value="rejected">Ditolak</option>
+                    </select>
+                </div>
+                
+                <div class="msme-export-form-group">
+                    <label>Periode Tanggal:</label>
+                    <div class="msme-export-date-range">
+                        <input type="date" id="export-date-from" />
+                        <span>sampai</span>
+                        <input type="date" id="export-date-to" />
+                    </div>
+                </div>
+                
+                <div class="msme-export-actions">
+                    <button type="button" class="button" onclick="hideExportModal()">Batal</button>
+                    <button type="button" class="button button-primary" onclick="executeCSVExport()">
+                        &#x1F4E5; Download CSV
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Overlay -->
+            <div id="export-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999;" onclick="hideExportModal()"></div>
+                
                 <!-- Statistics -->
                 <div style="float: right;">
                     <strong>Statistik:</strong> 
@@ -2681,6 +2731,7 @@ class MSME_Business_Manager {
         add_action('wp_ajax_msme_reject_registration', array($this, 'handle_reject_registration'));
         add_action('wp_ajax_msme_get_registration_stats', array($this, 'get_registration_stats'));
         add_action('wp_ajax_msme_get_registration_details', array($this, 'get_registration_details'));
+        add_action('wp_ajax_msme_export_csv', array($this, 'handle_csv_export'));
     }
     
     /**
@@ -3378,6 +3429,123 @@ class MSME_Business_Manager {
             error_log('MSME Get Details Error: ' . $e->getMessage());
             wp_send_json_error('Failed to retrieve registration details');
         }
+    }
+    
+    /**
+     * Handle CSV export of registration data
+     */
+    public function handle_csv_export() {
+        // Security check
+        if (!wp_verify_nonce($_GET['nonce'], 'msme_admin_nonce')) {
+            wp_die('Invalid security token');
+        }
+        
+        if (!current_user_can('manage_network')) {
+            wp_die('Insufficient permissions');
+        }
+        
+        global $wpdb;
+        
+        // Get parameters
+        $status_filter = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : 'all';
+        $date_from = isset($_GET['date_from']) ? sanitize_text_field($_GET['date_from']) : '';
+        $date_to = isset($_GET['date_to']) ? sanitize_text_field($_GET['date_to']) : '';
+        
+        // Build WHERE clause
+        $where_conditions = array('1=1');
+        
+        if ($status_filter !== 'all') {
+            if ($status_filter === 'pending') {
+                $where_conditions[] = "(status = '' OR status = 'pending' OR status = 'verified')";
+            } else {
+                $where_conditions[] = $wpdb->prepare("status = %s", $status_filter);
+            }
+        }
+        
+        if (!empty($date_from)) {
+            $where_conditions[] = $wpdb->prepare("DATE(created_date) >= %s", $date_from);
+        }
+        
+        if (!empty($date_to)) {
+            $where_conditions[] = $wpdb->prepare("DATE(created_date) <= %s", $date_to);
+        }
+        
+        $where_clause = implode(' AND ', $where_conditions);
+        
+        // Get data
+        $query = "
+            SELECT 
+                id as 'ID Registrasi',
+                business_name as 'Nama Bisnis',
+                email as 'Email Owner',
+                business_category as 'Kategori Bisnis',
+                phone_number as 'Nomor Telepon',
+                business_address as 'Alamat Bisnis',
+                CONCAT(subdomain, '.cobalah.id') as 'Website',
+                status as 'Status',
+                retry_count as 'Jumlah Percobaan',
+                DATE_FORMAT(created_date, '%d/%m/%Y %H:%i') as 'Tanggal Daftar',
+                DATE_FORMAT(last_rejected_date, '%d/%m/%Y %H:%i') as 'Terakhir Ditolak',
+                DATE_FORMAT(ban_until, '%d/%m/%Y %H:%i') as 'Ban Hingga',
+                admin_notes as 'Catatan Admin'
+            FROM {$wpdb->base_prefix}msme_registrations 
+            WHERE $where_clause 
+            ORDER BY created_date DESC
+        ";
+        
+        $results = $wpdb->get_results($query, ARRAY_A);
+        
+        // Generate filename
+        $filename = 'registrasi-bisnis-' . date('Y-m-d-H-i-s') . '.csv';
+        
+        // Set headers for download
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Pragma: no-cache');
+        header('Expires: 0');
+        
+        // Create file pointer
+        $output = fopen('php://output', 'w');
+        
+        // Add BOM for UTF-8 (for Excel compatibility)
+        fwrite($output, "\xEF\xBB\xBF");
+        
+        if (!empty($results)) {
+            // Write headers
+            fputcsv($output, array_keys($results[0]));
+            
+            // Write data
+            foreach ($results as $row) {
+                // Clean up status display
+                if (empty($row['Status']) || $row['Status'] === 'pending' || $row['Status'] === 'verified') {
+                    $row['Status'] = 'Menunggu Persetujuan';
+                } elseif ($row['Status'] === 'approved') {
+                    $row['Status'] = 'Disetujui';
+                } elseif ($row['Status'] === 'rejected') {
+                    $row['Status'] = 'Ditolak';
+                }
+                
+                fputcsv($output, $row);
+            }
+        } else {
+            // Write headers only
+            fputcsv($output, array('Tidak ada data ditemukan'));
+        }
+        
+        fclose($output);
+        exit;
+    }
+    
+    /**
+     * Disable WordPress emoji system (simplified version)
+     */
+    public function disable_wp_emoji_system() {
+        // Simple emoji disable for frontend
+        remove_action('wp_head', 'print_emoji_detection_script', 7);
+        remove_action('wp_print_styles', 'print_emoji_styles');
+        
+        // Remove the debug line too:
+        // DELETE: error_log('MSME: Disabling emoji system - admin: ' . (is_admin() ? 'YES' : 'NO'));
     }
     
 }

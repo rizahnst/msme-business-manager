@@ -1,0 +1,132 @@
+/* MSME Business Manager - Admin Styles */
+
+/* ====== EMOJI FIX ====== */
+.emoji {
+    display: none !important;
+}
+
+.emoji-replacement {
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-size: inherit;
+    display: inline-block;
+}
+
+/* ====== ADMIN DASHBOARD STYLES ====== */
+
+/* Export Modal Styles */
+.msme-export-modal {
+    display: none;
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border: 2px solid #0073aa;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 10000;
+    min-width: 400px;
+}
+
+.msme-export-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 9999;
+}
+
+.msme-export-modal h3 {
+    margin-top: 0;
+    color: #0073aa;
+}
+
+.msme-export-form-group {
+    margin: 15px 0;
+}
+
+.msme-export-form-group label {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+}
+
+.msme-export-form-group select,
+.msme-export-form-group input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+}
+
+.msme-export-date-range {
+    display: flex;
+    gap: 10px;
+    margin-top: 5px;
+    align-items: center;
+}
+
+.msme-export-date-range input {
+    flex: 1;
+}
+
+.msme-export-actions {
+    margin: 20px 0;
+    text-align: right;
+}
+
+.msme-export-actions .button {
+    margin-left: 10px;
+}
+
+/* Admin Table Enhancements */
+.msme-admin-stats {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 5px;
+    margin: 10px 0;
+}
+
+.msme-admin-stats strong {
+    color: #0073aa;
+}
+
+/* Button Styles */
+.msme-export-btn {
+    background: #0073aa !important;
+    border-color: #0073aa !important;
+    color: white !important;
+}
+
+.msme-export-btn:hover {
+    background: #005a87 !important;
+    border-color: #005a87 !important;
+}
+
+/* Loading States */
+.msme-loading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .msme-export-modal {
+        min-width: 90%;
+        max-width: 95%;
+        margin: 20px;
+    }
+    
+    .msme-export-date-range {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .msme-export-date-range input {
+        width: 100%;
+    }
+}

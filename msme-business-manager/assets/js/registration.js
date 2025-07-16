@@ -578,7 +578,7 @@ function showVerificationSuccess(data) {
     step3.innerHTML = `
         <div style="text-align: center; padding: 40px 20px;">
             <div style="background: #d4edda; border: 2px solid #28a745; border-radius: 15px; padding: 30px; margin: 20px 0;">
-                <h2 style="color: #155724; margin: 0 0 20px 0;">[✓] Verifikasi Berhasil!</h2>
+                <h2 style="color: #155724; margin: 0 0 20px 0;">✅  Verifikasi Berhasil!</h2>
                 <p style="font-size: 18px; color: #155724; margin: 0 0 15px 0;">
                     <strong>Verifikasi email berhasil! Pendaftaran Anda akan diproses oleh admin dalam 24 jam.</strong>
                 </p>
@@ -588,7 +588,7 @@ function showVerificationSuccess(data) {
                     <p><strong>Website:</strong> ${data.subdomain || 'N/A'}.cobalah.id</p>
                 </div>
                 <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px; padding: 20px; margin: 20px 0;">
-                    <h4 style="color: #856404; margin: 0 0 15px 0;">[>>] Langkah Selanjutnya:</h4>
+                    <h4 style="color: #856404; margin: 0 0 15px 0;">▶️ Langkah Selanjutnya:</h4>
                     <ul style="text-align: left; color: #856404;">
                         <li>Tim admin akan mengulas pendaftaran Anda</li>
                         <li>Anda akan menerima email konfirmasi dalam 24 jam</li>
@@ -1093,7 +1093,7 @@ function showBanMessage(data) {
     const banMessage = document.createElement('div');
     banMessage.style.cssText = 'background: #ffebee; border: 2px solid #f44336; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;';
     banMessage.innerHTML = `
-        <h3 style="color: #d32f2f; margin: 0 0 15px 0;">[BLOCK] Akun Dibatasi Sementara</h3>
+        <h3 style="color: #d32f2f; margin: 0 0 15px 0;">🚫 Akun Dibatasi Sementara</h3>
         <p style="margin: 10px 0;">${data.message}</p>
         <p style="color: #666; font-size: 14px; margin: 10px 0;">
             ℹ️ Periode pembatasan ini memberikan waktu untuk meninjau persyaratan pendaftaran
@@ -1109,7 +1109,7 @@ function showCooldownMessage(data) {
     const cooldownMessage = document.createElement('div');
     cooldownMessage.style.cssText = 'background: #fff3cd; border: 2px solid #ffc107; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;';
     cooldownMessage.innerHTML = `
-        <h3 style="color: #856404; margin: 0 0 15px 0;">[CLOCK] Periode Tunggu Aktif</h3>
+        <h3 style="color: #856404; margin: 0 0 15px 0;">⏰ Periode Tunggu Aktif</h3>
         <p style="margin: 10px 0;">${data.message}</p>
         <div id="countdown-timer" style="font-size: 24px; font-weight: bold; color: #856404; margin: 15px 0;">
             ${Math.ceil(data.remaining_seconds / 60)}:${String(data.remaining_seconds % 60).padStart(2, '0')}
@@ -1289,4 +1289,82 @@ function showRegistrationDetailsModal(data) {
     `;
     
     document.body.appendChild(modal);
+}
+
+// =====================================
+// CSV Export Functions for Admin
+// =====================================
+
+function showExportModal() {
+    document.getElementById('export-modal').style.display = 'block';
+    document.getElementById('export-overlay').style.display = 'block';
+    
+    // Set default dates (last 30 days)
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    document.getElementById('export-date-to').value = today.toISOString().split('T')[0];
+    document.getElementById('export-date-from').value = thirtyDaysAgo.toISOString().split('T')[0];
+}
+
+function hideExportModal() {
+    document.getElementById('export-modal').style.display = 'none';
+    document.getElementById('export-overlay').style.display = 'none';
+}
+
+function executeCSVExport() {
+    const status = document.getElementById('export-status').value;
+    const dateFrom = document.getElementById('export-date-from').value;
+    const dateTo = document.getElementById('export-date-to').value;
+    
+    // Show loading
+    const button = event.target;
+    const originalText = button.innerHTML;
+    button.innerHTML = '⏳ Mengunduh...';
+    button.disabled = true;
+    
+    // Check if required variables exist
+    if (typeof ajaxurl === 'undefined') {
+        showNotification('Error: ajaxurl tidak tersedia', 'error');
+        button.innerHTML = originalText;
+        button.disabled = false;
+        return;
+    }
+    
+    if (typeof msme_ajax_nonce === 'undefined') {
+        showNotification('Error: Security nonce tidak tersedia', 'error');
+        button.innerHTML = originalText;
+        button.disabled = false;
+        return;
+    }
+    
+    // Create download link
+    const params = new URLSearchParams({
+        action: 'msme_export_csv',
+        nonce: msme_ajax_nonce,
+        status: status,
+        date_from: dateFrom,
+        date_to: dateTo
+    });
+    
+    const downloadUrl = ajaxurl + '?' + params.toString();
+    
+    // Create temporary link and trigger download
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = 'registrasi-bisnis-' + new Date().toISOString().split('T')[0] + '.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Show success message
+    showNotification('✅ CSV berhasil diunduh!', 'success');
+    
+    // Reset button after 2 seconds
+    setTimeout(() => {
+        button.innerHTML = originalText;
+        button.disabled = false;
+        hideExportModal();
+    }, 2000);
 }
