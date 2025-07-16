@@ -861,7 +861,7 @@ function approveRegistration(id) {
                         
                         if (response.success) {
                             // Success - update UI
-                            showNotification('✅ Pendaftaran berhasil disetujui!', 'success');
+                            showNotification('Pendaftaran berhasil disetujui!', 'success');
                             
                             // Update the row in the table
                             updateRegistrationRow(id, 'approved');
@@ -877,26 +877,26 @@ function approveRegistration(id) {
                                 } else if (response.data.type === 'cooldown') {
                                     showCooldownMessage(response.data);
                                 } else {
-                                    showNotification('❌ ' + response.data.message, 'error');
+                                    showNotification('Error: ' + response.data.message, 'error');
                                 }
                             } else {
-                                showNotification('❌ Gagal: ' + (response.data.message || 'Unknown error'), 'error');
+                                showNotification('Gagal: ' + (response.data.message || 'Unknown error'), 'error');
                             }
                         }
                     } catch (e) {
                         console.error('JSON parse error:', e);
-                        showNotification('❌ Respons server tidak valid', 'error');
+                        showNotification('Respons server tidak valid', 'error');
                     }
                 } else {
                     console.error('HTTP Error:', xhr.status);
-                    showNotification('❌ Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
+                    showNotification('Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
                 }
             }
         };
         
         xhr.onerror = function() {
             console.error('Network error occurred');
-            showNotification('❌ Kesalahan jaringan', 'error');
+            showNotification('Kesalahan jaringan', 'error');
         };
         
         // Send request
@@ -938,7 +938,7 @@ function rejectRegistration(id) {
                         
                         if (response.success) {
                             // Success - update UI
-                            showNotification('✅ Pendaftaran berhasil ditolak!', 'success');
+                            showNotification('Pendaftaran berhasil ditolak!', 'success');
                             
                             // Update the row in the table
                             updateRegistrationRow(id, 'rejected');
@@ -948,22 +948,22 @@ function rejectRegistration(id) {
                             
                         } else {
                             // Error response
-                            showNotification('❌ Gagal menolak pendaftaran: ' + (response.data || 'Unknown error'), 'error');
+                            showNotification('Gagal menolak pendaftaran: ' + (response.data || 'Unknown error'), 'error');
                         }
                     } catch (e) {
                         console.error('JSON parse error:', e);
-                        showNotification('❌ Respons server tidak valid', 'error');
+                        showNotification('Respons server tidak valid', 'error');
                     }
                 } else {
                     console.error('HTTP Error:', xhr.status);
-                    showNotification('❌ Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
+                    showNotification('Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
                 }
             }
         };
         
         xhr.onerror = function() {
             console.error('Network error occurred');
-            showNotification('❌ Kesalahan jaringan', 'error');
+            showNotification('Kesalahan jaringan', 'error');
         };
         
         // Send request
@@ -1020,11 +1020,11 @@ function updateRegistrationRow(id, newStatus) {
         
         // Update status cell
         if (newStatus === 'approved') {
-            statusCell.innerHTML = '<span style="color: #46b450; font-weight: bold;">✅ Disetujui</span>';
-            actionCell.innerHTML = '<span style="color: #46b450;">✅ Disetujui</span>';
+            statusCell.innerHTML = '<span style="color: #46b450; font-weight: bold;">Disetujui</span>';
+            actionCell.innerHTML = '<span style="color: #46b450;">Disetujui</span>';
         } else if (newStatus === 'rejected') {
-            statusCell.innerHTML = '<span style="color: #dc3232; font-weight: bold;">❌ Ditolak</span>';
-            actionCell.innerHTML = '<span style="color: #dc3232;">❌ Ditolak</span>';
+            statusCell.innerHTML = '<span style="color: #dc3232; font-weight: bold;">Ditolak</span>';
+            actionCell.innerHTML = '<span style="color: #dc3232;">Ditolak</span>';
         }
         
         // Add a brief highlight effect
@@ -1221,7 +1221,7 @@ function showRegistrationDetailsModal(data) {
     
     modal.innerHTML = `
         <div style="background: white; border-radius: 8px; max-width: 600px; width: 90%; max-height: 80%; overflow-y: auto; padding: 30px; position: relative;">
-            <button onclick="this.closest('#registration-details-modal').remove()" style="position: absolute; top: 15px; right: 15px; background: #dc3232; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer;">✕</button>
+            <button onclick="this.closest('#registration-details-modal').remove()" style="position: absolute; top: 15px; right: 15px; background: #dc3232; color: white; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer;">&times;</button>
             
             <h2 style="margin: 0 0 20px 0; color: #0073aa;">Detail Pendaftaran</h2>
             
@@ -1258,7 +1258,7 @@ function showRegistrationDetailsModal(data) {
                     <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">Status</td>
                     <td style="padding: 10px; border: 1px solid #ddd;">
                         <span style="color: ${data.status === 'approved' ? '#46b450' : data.status === 'rejected' ? '#dc3232' : '#856404'}; font-weight: bold;">
-                            ${data.status === 'approved' ? '✅ Disetujui' : data.status === 'rejected' ? '✗ Ditolak' : data.status === 'verified' ? 'Terverifikasi' : 'Menunggu'}
+                            ${data.status === 'approved' ? 'Disetujui' : data.status === 'rejected' ? '✗ Ditolak' : data.status === 'verified' ? 'Terverifikasi' : 'Menunggu'}
                         </span>
                     </td>
                 </tr>
@@ -1321,7 +1321,7 @@ function executeCSVExport() {
     // Show loading
     const button = event.target;
     const originalText = button.innerHTML;
-    button.innerHTML = '⏳ Mengunduh...';
+    button.innerHTML = 'Mengunduh...';
     button.disabled = true;
     
     // Check if required variables exist
@@ -1359,7 +1359,7 @@ function executeCSVExport() {
     document.body.removeChild(link);
     
     // Show success message
-    showNotification('✅ CSV berhasil diunduh!', 'success');
+    showNotification('CSV berhasil diunduh!', 'success');
     
     // Reset button after 2 seconds
     setTimeout(() => {
@@ -1368,3 +1368,197 @@ function executeCSVExport() {
         hideExportModal();
     }, 2000);
 }
+
+// ====== ENHANCED UI INTERACTIONS ======
+
+// Add loading states to buttons
+function addLoadingState(button, text = 'Memproses...') {
+    if (button) {
+        button.classList.add('msme-loading');
+        button.setAttribute('data-original-text', button.textContent);
+        button.textContent = text;
+        button.disabled = true;
+    }
+}
+
+function removeLoadingState(button) {
+    if (button) {
+        button.classList.remove('msme-loading');
+        const originalText = button.getAttribute('data-original-text');
+        if (originalText) {
+            button.textContent = originalText;
+        }
+        button.disabled = false;
+    }
+}
+
+// Enhanced table interactions
+document.addEventListener('DOMContentLoaded', function() {
+    // Add data labels for mobile table view
+    const table = document.querySelector('.wp-list-table');
+    if (table) {
+        const headers = table.querySelectorAll('th');
+        const rows = table.querySelectorAll('tbody tr');
+        
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            cells.forEach((cell, index) => {
+                if (headers[index]) {
+                    cell.setAttribute('data-label', headers[index].textContent.trim());
+                }
+            });
+        });
+    }
+    
+    // Enhanced button feedback
+    document.querySelectorAll('.button').forEach(button => {
+        button.addEventListener('click', function(e) {
+            // Create ripple effect
+            const rect = this.getBoundingClientRect();
+            const ripple = document.createElement('span');
+            const size = Math.max(rect.width, rect.height);
+            const x = e.clientX - rect.left - size / 2;
+            const y = e.clientY - rect.top - size / 2;
+            
+            ripple.style.cssText = `
+                position: absolute;
+                width: ${size}px;
+                height: ${size}px;
+                left: ${x}px;
+                top: ${y}px;
+                background: rgba(255,255,255,0.3);
+                border-radius: 50%;
+                transform: scale(0);
+                animation: ripple 0.6s ease-out;
+            `;
+            
+            this.appendChild(ripple);
+            setTimeout(() => ripple.remove(), 600);
+        });
+    });
+    
+    // Add print functionality
+    const printCSS = `
+        <style id="print-styles">
+            @media print {
+                body * { visibility: hidden; }
+                .wrap, .wrap * { visibility: visible; }
+                .wrap { position: absolute; left: 0; top: 0; width: 100%; }
+            }
+        </style>
+    `;
+    
+    // Add print button
+    const printButton = document.createElement('button');
+    printButton.type = 'button';
+    printButton.className = 'button button-secondary';
+    printButton.textContent = 'Print Report';
+    printButton.style.marginLeft = '10px';
+    
+    printButton.addEventListener('click', function() {
+        const head = document.head;
+        head.insertAdjacentHTML('beforeend', printCSS);
+        
+        // Add print date
+        document.querySelector('.wrap').setAttribute('data-print-date', new Date().toLocaleString());
+        
+        window.print();
+        
+        // Remove print styles after printing
+        setTimeout(() => {
+            const printStyles = document.getElementById('print-styles');
+            if (printStyles) printStyles.remove();
+        }, 1000);
+    });
+    
+    // Add print button to tablenav
+    const tablenav = document.querySelector('.tablenav.top');
+    if (tablenav) {
+        tablenav.appendChild(printButton);
+    }
+});
+
+// Real-time statistics updates
+function updateDashboardStats() {
+    // Add subtle animation to updated stats
+    const statsElement = document.querySelector('.msme-admin-stats');
+    if (statsElement) {
+        statsElement.style.transform = 'scale(1.02)';
+        setTimeout(() => {
+            statsElement.style.transform = 'scale(1)';
+        }, 200);
+    }
+}
+
+// Enhanced notification system with better animations
+function showNotification(message, type = 'info') {
+    // Remove existing notifications
+    document.querySelectorAll('.msme-admin-notice').forEach(notice => notice.remove());
+    
+    // Create notification
+    const notification = document.createElement('div');
+    notification.className = `notice notice-${type} is-dismissible msme-admin-notice`;
+    notification.style.cssText = `
+        animation: msme-notification-slide-in 0.3s ease;
+        margin-bottom: 20px;
+    `;
+    
+    notification.innerHTML = `
+        <p><strong>${message}</strong></p>
+        <button type="button" class="notice-dismiss" onclick="this.parentElement.remove();">
+            <span class="screen-reader-text">Dismiss this notice.</span>
+        </button>
+    `;
+    
+    // Insert notification
+    const contentWrap = document.querySelector('.wrap') || document.querySelector('body');
+    if (contentWrap) {
+        contentWrap.insertBefore(notification, contentWrap.firstChild);
+        
+        // Auto-dismiss success/info messages
+        if (type !== 'error') {
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.style.animation = 'msme-notification-slide-out 0.3s ease';
+                    setTimeout(() => notification.remove(), 300);
+                }
+            }, 5000);
+        }
+    }
+}
+
+// Add CSS animations for notifications
+const notificationCSS = `
+    <style>
+        @keyframes msme-notification-slide-in {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes msme-notification-slide-out {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+        }
+        
+        @keyframes ripple {
+            to {
+                transform: scale(4);
+                opacity: 0;
+            }
+        }
+    </style>
+`;
+
+document.head.insertAdjacentHTML('beforeend', notificationCSS);

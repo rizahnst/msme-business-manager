@@ -2555,13 +2555,13 @@ class MSME_Business_Manager {
             <!-- CSV Export Section -->
             <div style="display: inline-block; margin-left: 20px;">
                 <button type="button" class="button button-primary msme-export-btn" onclick="showExportModal()">
-                    &#x1F4CA; Export CSV
+                    Export CSV
                 </button>
             </div>
             
             <!-- Export Modal (Hidden by default) -->
             <div id="export-modal" class="msme-export-modal">
-                <h3>&#x1F4CB; Export Data Pendaftaran</h3>
+                <h3>Export Data Pendaftaran</h3>
                 
                 <div class="msme-export-form-group">
                     <label>Filter Status:</label>
@@ -2585,7 +2585,7 @@ class MSME_Business_Manager {
                 <div class="msme-export-actions">
                     <button type="button" class="button" onclick="hideExportModal()">Batal</button>
                     <button type="button" class="button button-primary" onclick="executeCSVExport()">
-                        &#x1F4E5; Download CSV
+                        Download CSV
                     </button>
                 </div>
             </div>

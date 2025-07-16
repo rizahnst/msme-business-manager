@@ -130,3 +130,421 @@
         width: 100%;
     }
 }
+
+/* ====== ENHANCED MOBILE OPTIMIZATION ====== */
+
+/* Admin Table Mobile Responsiveness */
+@media (max-width: 992px) {
+    .wp-list-table {
+        font-size: 14px;
+    }
+    
+    .wp-list-table th,
+    .wp-list-table td {
+        padding: 8px 6px;
+    }
+    
+    /* Hide less important columns on tablets */
+    .wp-list-table th:nth-child(4), /* Contact column */
+    .wp-list-table td:nth-child(4) {
+        display: none;
+    }
+}
+
+@media (max-width: 768px) {
+    /* Stack filter and export controls vertically */
+    .tablenav {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .tablenav form {
+        width: 100% !important;
+        margin-bottom: 10px;
+    }
+    
+    .tablenav select {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    /* Mobile-friendly table */
+    .wp-list-table {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .wp-list-table thead,
+    .wp-list-table tbody,
+    .wp-list-table th,
+    .wp-list-table td,
+    .wp-list-table tr {
+        display: block;
+    }
+    
+    .wp-list-table thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+    }
+    
+    .wp-list-table tr {
+        border: 1px solid #ddd;
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 5px;
+        background: white;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .wp-list-table td {
+        border: none;
+        position: relative;
+        padding-left: 40% !important;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        white-space: normal;
+        text-align: left;
+    }
+    
+    .wp-list-table td:before {
+        content: attr(data-label);
+        position: absolute;
+        left: 6px;
+        width: 35%;
+        padding-right: 10px;
+        white-space: nowrap;
+        font-weight: bold;
+        color: #333;
+    }
+    
+    /* Hide checkbox column on mobile */
+    .wp-list-table td:first-child {
+        display: none;
+    }
+    
+    /* Statistics mobile layout */
+    .msme-admin-stats {
+        text-align: center;
+        padding: 10px;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+}
+
+@media (max-width: 480px) {
+    .wrap h1 {
+        font-size: 24px;
+        margin-bottom: 15px;
+    }
+    
+    .msme-export-btn {
+        width: 100%;
+        margin-top: 10px;
+        padding: 12px;
+    }
+    
+    /* Action buttons stack on mobile */
+    .wp-list-table .button {
+        display: block;
+        width: 100%;
+        margin: 5px 0;
+        text-align: center;
+    }
+}
+
+/* ====== ADVANCED LOADING STATES ====== */
+
+/* Smooth loading animation */
+.msme-loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #0073aa;
+    border-radius: 50%;
+    animation: msme-spin 1s linear infinite;
+    margin-right: 8px;
+}
+
+@keyframes msme-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Button loading states */
+.button.msme-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+}
+
+.button.msme-loading:after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: msme-spin 1s linear infinite;
+}
+
+/* Table row hover effects */
+.wp-list-table tbody tr {
+    transition: all 0.2s ease;
+}
+
+.wp-list-table tbody tr:hover {
+    background-color: #f8f9fa;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Smooth modal animations */
+.msme-export-modal {
+    animation: msme-modal-fade-in 0.3s ease;
+}
+
+.msme-export-overlay {
+    animation: msme-overlay-fade-in 0.3s ease;
+}
+
+@keyframes msme-modal-fade-in {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -60%);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+    }
+}
+
+@keyframes msme-overlay-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* Status indicator animations */
+.status-indicator {
+    transition: all 0.3s ease;
+}
+
+.status-indicator:hover {
+    transform: scale(1.05);
+}
+
+/* ====== INTERACTIVE DASHBOARD ELEMENTS ====== */
+
+/* Enhanced statistics display */
+.msme-admin-stats {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border: 1px solid #dee2e6;
+    transition: all 0.3s ease;
+}
+
+.msme-admin-stats:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+/* Status badges with hover effects */
+.status-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    text-transform: uppercase;
+    transition: all 0.3s ease;
+}
+
+.status-badge.pending {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.status-badge.approved {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.status-badge.rejected {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.status-badge:hover {
+    transform: scale(1.1);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* Enhanced buttons with better feedback */
+.button {
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.button:before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+    transition: all 0.6s ease;
+    transform: translate(-50%, -50%);
+}
+
+.button:active:before {
+    width: 300px;
+    height: 300px;
+}
+
+/* Improved form elements */
+.msme-export-form-group input,
+.msme-export-form-group select {
+    transition: all 0.3s ease;
+    border: 2px solid #ddd;
+}
+
+.msme-export-form-group input:focus,
+.msme-export-form-group select:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 3px rgba(0, 115, 170, 0.1);
+    transform: scale(1.02);
+}
+
+/* ====== ACCESSIBILITY ENHANCEMENTS ====== */
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .wp-list-table {
+        border: 2px solid #000;
+    }
+    
+    .button {
+        border: 2px solid currentColor;
+    }
+    
+    .status-badge {
+        border: 2px solid currentColor;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Focus management */
+.button:focus,
+input:focus,
+select:focus {
+    outline: 3px solid #0073aa;
+    outline-offset: 2px;
+}
+
+/* Screen reader only content */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Skip link for keyboard navigation */
+.skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    background: #0073aa;
+    color: white;
+    padding: 8px 16px;
+    text-decoration: none;
+    z-index: 100000;
+}
+
+.skip-link:focus {
+    left: 6px;
+}
+
+/* ====== PRINT-FRIENDLY LAYOUTS ====== */
+
+@media print {
+    /* Hide non-essential elements */
+    .msme-export-btn,
+    .tablenav,
+    .notice,
+    .msme-export-modal,
+    .msme-export-overlay,
+    .button,
+    .wp-list-table input[type="checkbox"] {
+        display: none !important;
+    }
+    
+    /* Optimize table for printing */
+    .wp-list-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 12px;
+    }
+    
+    .wp-list-table th,
+    .wp-list-table td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+    }
+    
+    .wp-list-table th {
+        background: #f0f0f0;
+        font-weight: bold;
+    }
+    
+    /* Page breaks */
+    .wp-list-table tr {
+        page-break-inside: avoid;
+    }
+    
+    /* Print header */
+    .wrap:before {
+        content: "MSME Business Manager - Registration Report";
+        display: block;
+        font-size: 18px;
+        font-weight: bold;
+        margin-bottom: 20px;
+        text-align: center;
+    }
+    
+    /* Print timestamp */
+    .wrap:after {
+        content: "Generated on " attr(data-print-date);
+        display: block;
+        margin-top: 20px;
+        font-size: 10px;
+        text-align: right;
+    }
+}
