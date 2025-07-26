@@ -832,6 +832,20 @@ document.addEventListener('DOMContentLoaded', function() {
 function approveRegistration(id) {
     if (confirm('Setujui pendaftaran ini? Bisnis akan mendapatkan akses ke website mereka.')) {
         console.log('Approving registration:', id);
+
+        // Enhanced loading state for the clicked button
+        const button = event.target;
+        addLoadingState(button, 'Memproses...');
+        
+        // Disable all other action buttons in the same row
+        const row = button.closest('tr');
+        const otherButtons = row.querySelectorAll('.button');
+        otherButtons.forEach(btn => {
+            if (btn !== button) {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+            }
+        });
         
         // Show loading state
         showNotification('Memproses persetujuan...', 'info');
@@ -868,6 +882,15 @@ function approveRegistration(id) {
                             
                             // Update statistics if present
                             updateDashboardStats();
+
+                            // Reset button states
+                            removeLoadingState(button);
+                            const row = button.closest('tr');
+                            const otherButtons = row.querySelectorAll('.button');
+                            otherButtons.forEach(btn => {
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                            });
                             
                         } else {
                             // Enhanced error handling for retry system
@@ -882,6 +905,15 @@ function approveRegistration(id) {
                             } else {
                                 showNotification('Gagal: ' + (response.data.message || 'Unknown error'), 'error');
                             }
+
+                            // Reset button states on error
+                            removeLoadingState(button);
+                            const row = button.closest('tr');
+                            const otherButtons = row.querySelectorAll('.button');
+                            otherButtons.forEach(btn => {
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                            });
                         }
                     } catch (e) {
                         console.error('JSON parse error:', e);
@@ -909,6 +941,20 @@ function rejectRegistration(id) {
     const reason = prompt('Alasan penolakan (opsional):');
     if (reason !== null) { // User didn't cancel
         console.log('Rejecting registration:', id, 'Reason:', reason);
+
+        // Enhanced loading state for the clicked button
+        const button = event.target;
+        addLoadingState(button, 'Memproses...');
+        
+        // Disable all other action buttons in the same row
+        const row = button.closest('tr');
+        const otherButtons = row.querySelectorAll('.button');
+        otherButtons.forEach(btn => {
+            if (btn !== button) {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+            }
+        });
         
         // Show loading state
         showNotification('Memproses penolakan...', 'info');
@@ -945,6 +991,15 @@ function rejectRegistration(id) {
                             
                             // Update statistics if present
                             updateDashboardStats();
+
+                            // Reset button states
+                            removeLoadingState(button);
+                            const row = button.closest('tr');
+                            const otherButtons = row.querySelectorAll('.button');
+                            otherButtons.forEach(btn => {
+                                btn.disabled = false;
+                                btn.style.opacity = '1';
+                            });
                             
                         } else {
                             // Error response
@@ -958,6 +1013,15 @@ function rejectRegistration(id) {
                     console.error('HTTP Error:', xhr.status);
                     showNotification('Kesalahan koneksi server (HTTP ' + xhr.status + ')', 'error');
                 }
+
+                // Reset button states on error
+                removeLoadingState(button);
+                const row = button.closest('tr');
+                const otherButtons = row.querySelectorAll('.button');
+                otherButtons.forEach(btn => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
             }
         };
         
@@ -1448,34 +1512,6 @@ document.addEventListener('DOMContentLoaded', function() {
         </style>
     `;
     
-    // Add print button
-    const printButton = document.createElement('button');
-    printButton.type = 'button';
-    printButton.className = 'button button-secondary';
-    printButton.textContent = 'Print Report';
-    printButton.style.marginLeft = '10px';
-    
-    printButton.addEventListener('click', function() {
-        const head = document.head;
-        head.insertAdjacentHTML('beforeend', printCSS);
-        
-        // Add print date
-        document.querySelector('.wrap').setAttribute('data-print-date', new Date().toLocaleString());
-        
-        window.print();
-        
-        // Remove print styles after printing
-        setTimeout(() => {
-            const printStyles = document.getElementById('print-styles');
-            if (printStyles) printStyles.remove();
-        }, 1000);
-    });
-    
-    // Add print button to tablenav
-    const tablenav = document.querySelector('.tablenav.top');
-    if (tablenav) {
-        tablenav.appendChild(printButton);
-    }
 });
 
 // Real-time statistics updates
@@ -1562,3 +1598,180 @@ const notificationCSS = `
 `;
 
 document.head.insertAdjacentHTML('beforeend', notificationCSS);
+
+// Enhanced accessibility functions - add to registration.js
+
+// Initialize accessibility features
+document.addEventListener('DOMContentLoaded', function() {
+    initializeAccessibilityFeatures();
+    enhanceKeyboardNavigation();
+    addLoadingStateAria();
+});
+
+function initializeAccessibilityFeatures() {
+    // Add print date for accessibility
+    const wrapper = document.querySelector('.wrap');
+    if (wrapper) {
+        wrapper.setAttribute('data-print-date', new Date().toLocaleDateString('id-ID'));
+    }
+    
+    // Enhance table navigation
+    const table = document.querySelector('.wp-list-table');
+    if (table) {
+        // Add table navigation helpers
+        table.addEventListener('keydown', handleTableKeyNavigation);
+        
+        // Add row selection feedback
+        const checkboxes = table.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateSelectionAria);
+        });
+    }
+}
+
+function handleTableKeyNavigation(event) {
+    const focusableElements = Array.from(this.querySelectorAll(
+        'input, button, select, a, [tabindex]:not([tabindex="-1"])'
+    ));
+    
+    const currentIndex = focusableElements.indexOf(document.activeElement);
+    
+    switch(event.key) {
+        case 'Home':
+            if (event.ctrlKey) {
+                event.preventDefault();
+                focusableElements[0]?.focus();
+            }
+            break;
+        case 'End':
+            if (event.ctrlKey) {
+                event.preventDefault();
+                focusableElements[focusableElements.length - 1]?.focus();
+            }
+            break;
+    }
+}
+
+function updateSelectionAria() {
+    const checkboxes = document.querySelectorAll('input[name="registration_ids[]"]');
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    const totalCount = checkboxes.length;
+    
+    // Update bulk actions accessibility
+    const bulkContainer = document.querySelector('.bulk-actions-container');
+    if (bulkContainer) {
+        bulkContainer.setAttribute('aria-label', 
+            `Bulk actions - ${checkedCount} of ${totalCount} registrations selected`
+        );
+    }
+    
+    // Update select all checkbox
+    const selectAll = document.getElementById('select-all-registrations');
+    if (selectAll) {
+        selectAll.setAttribute('aria-description', 
+            `${checkedCount} of ${totalCount} registrations currently selected`
+        );
+    }
+}
+
+function addLoadingStateAria() {
+    // Enhance existing button functions with ARIA states
+    const originalApprove = window.approveRegistration;
+    const originalReject = window.rejectRegistration;
+    
+    window.approveRegistration = function(id) {
+        const button = event.target;
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-describedby', 'processing-message');
+        
+        // Create or update processing message
+        let message = document.getElementById('processing-message');
+        if (!message) {
+            message = document.createElement('div');
+            message.id = 'processing-message';
+            message.className = 'sr-only';
+            document.body.appendChild(message);
+        }
+        message.textContent = 'Processing approval request, please wait...';
+        
+        // Call original function
+        if (originalApprove) originalApprove.call(this, id);
+    };
+    
+    window.rejectRegistration = function(id) {
+        const button = event.target;
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-describedby', 'processing-message');
+        
+        let message = document.getElementById('processing-message');
+        if (!message) {
+            message = document.createElement('div');
+            message.id = 'processing-message';
+            message.className = 'sr-only';
+            document.body.appendChild(message);
+        }
+        message.textContent = 'Processing rejection request, please wait...';
+        
+        // Call original function  
+        if (originalReject) originalReject.call(this, id);
+    };
+}
+
+// Enhanced notification function with ARIA live regions
+function showNotification(message, type = 'success') {
+    // Remove existing notifications
+    const existingNotifications = document.querySelectorAll('.notice.msme-notification');
+    existingNotifications.forEach(n => n.remove());
+    
+    const notification = document.createElement('div');
+    notification.className = `notice notice-${type} is-dismissible msme-notification`;
+    notification.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+    notification.innerHTML = `
+        <p><strong>${message}</strong></p>
+        <button type="button" class="notice-dismiss" onclick="this.parentElement.remove();" aria-label="Dismiss this notice">
+            <span class="screen-reader-text">Dismiss this notice.</span>
+        </button>
+    `;
+    
+    const contentWrap = document.querySelector('.wrap') || document.querySelector('body');
+    if (contentWrap) {
+        contentWrap.insertBefore(notification, contentWrap.firstChild);
+        
+        // Auto-dismiss success messages
+        if (type !== 'error') {
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+    }
+}
+
+function printRegistrationReport() {
+    const printCSS = `
+        <style id="print-styles">
+            @media print {
+                body * { visibility: hidden; }
+                .wrap, .wrap * { visibility: visible; }
+                .wrap { position: absolute; left: 0; top: 0; width: 100%; }
+                .msme-export-btn, .button, .tablenav, .notice { display: none !important; }
+            }
+        </style>
+    `;
+    
+    const head = document.head;
+    head.insertAdjacentHTML('beforeend', printCSS);
+    
+    // Add print date
+    document.querySelector('.wrap').setAttribute('data-print-date', new Date().toLocaleString());
+    
+    window.print();
+    
+    // Remove print styles after printing
+    setTimeout(() => {
+        const printStyles = document.getElementById('print-styles');
+        if (printStyles) printStyles.remove();
+    }, 1000);
+}

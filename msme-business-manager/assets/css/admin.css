@@ -548,3 +548,249 @@ select:focus {
         text-align: right;
     }
 }
+
+/* ====== ENHANCED ACCESSIBILITY FEATURES ====== */
+
+/* Improved focus indicators */
+.wp-list-table input:focus,
+.wp-list-table button:focus,
+.wp-list-table select:focus {
+    outline: 3px solid #0073aa;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 1px #fff, 0 0 0 4px #0073aa;
+}
+
+/* Enhanced status badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border: 1px solid currentColor;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Action button groups */
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.action-buttons .button {
+    min-width: 80px;
+    justify-content: center;
+}
+
+/* Bulk actions container */
+.bulk-actions-container {
+    margin-top: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* Keyboard navigation helpers */
+.wp-list-table tbody tr:focus-within {
+    background-color: #f0f8ff;
+    outline: 2px solid #0073aa;
+    outline-offset: -2px;
+}
+
+/* Enhanced mobile accessibility */
+@media (max-width: 768px) {
+    .action-buttons {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .action-buttons .button {
+        width: 100%;
+        margin: 2px 0;
+    }
+    
+    .bulk-actions-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .bulk-actions-container select,
+    .bulk-actions-container button {
+        width: 100%;
+        margin: 4px 0;
+    }
+}
+
+/* Loading state accessibility */
+.button[aria-busy="true"] {
+    position: relative;
+    color: transparent !important;
+}
+
+.button[aria-busy="true"]:after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin: -8px 0 0 -8px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* ====== ENHANCED BUTTON LOADING STATES ====== */
+
+/* Better loading button animation */
+.button.msme-loading {
+    position: relative;
+    color: transparent !important;
+    cursor: wait !important;
+    pointer-events: none;
+}
+
+.button.msme-loading:after {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    top: 50%;
+    left: 50%;
+    margin: -7px 0 0 -7px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: msme-button-spin 0.8s linear infinite;
+}
+
+@keyframes msme-button-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Button row states */
+.wp-list-table tr.processing {
+    background-color: #f0f8ff;
+    transition: background-color 0.3s ease;
+}
+
+.wp-list-table tr.processing .button:not(.msme-loading) {
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+/* Enhanced status badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+}
+
+/* Button hover effects enhancement */
+.button:hover:not(:disabled):not(.msme-loading) {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.button:active:not(:disabled):not(.msme-loading) {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile button improvements */
+@media (max-width: 768px) {
+    .wp-list-table .button {
+        padding: 8px 12px;
+        font-size: 13px;
+        min-height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .wp-list-table .button.msme-loading:after {
+        width: 12px;
+        height: 12px;
+        margin: -6px 0 0 -6px;
+    }
+}
+
+/* ====== ENHANCED STATUS BADGES (NO EMOJIS) ====== */
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+    white-space: nowrap;
+}
+
+.status-badge.status-pending,
+.status-badge.status-verified {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    color: #856404;
+    border-color: #ffc107;
+}
+
+.status-badge.status-approved {
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    color: #155724;
+    border-color: #28a745;
+}
+
+.status-badge.status-rejected {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    color: #721c24;
+    border-color: #dc3545;
+}
+
+/* Status badge indicators using WordPress admin style */
+.status-badge.status-pending:before {
+    content: "●";
+    margin-right: 4px;
+    color: #ffc107;
+}
+
+.status-badge.status-approved:before {
+    content: "●";
+    margin-right: 4px;
+    color: #28a745;
+}
+
+.status-badge.status-rejected:before {
+    content: "●";
+    margin-right: 4px;
+    color: #dc3545;
+}
+
+/* Hover effects for status badges */
+.status-badge:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}

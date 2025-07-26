@@ -2558,6 +2558,13 @@ class MSME_Business_Manager {
                     Export CSV
                 </button>
             </div>
+
+            <!-- Print Report Section -->
+            <div style="display: inline-block; margin-left: 10px;">
+                <button type="button" class="button button-secondary" onclick="printRegistrationReport()">
+                    Print Report
+                </button>
+            </div>
             
             <!-- Export Modal (Hidden by default) -->
             <div id="export-modal" class="msme-export-modal">
@@ -2670,7 +2677,7 @@ class MSME_Business_Manager {
                                     $color = $status_colors[$display_status] ?? 'gray';
                                     $label = $status_labels[$display_status] ?? $display_status;
                                     ?>
-                                    <span style="color: <?php echo $color; ?>; font-weight: bold;">
+                                    <span class="status-badge status-<?php echo esc_attr($display_status); ?>">
                                         <?php echo $label; ?>
                                     </span>
                                 </td>
